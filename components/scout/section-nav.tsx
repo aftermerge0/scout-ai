@@ -41,7 +41,7 @@ export function SectionNav({ sections }: { sections: AnySection[] }) {
             <a
               href={`#${section.key}`}
               className={cn(
-                "flex items-center gap-2 rounded-sm px-2 py-1 text-[13px] transition-colors",
+                "flex items-center gap-2 rounded-sm px-2 py-1 text-[13px] transition-[color,background-color] duration-150 ease-[var(--ease-out)]",
                 active === section.key
                   ? "bg-muted text-foreground"
                   : "text-muted-foreground hover:text-foreground"

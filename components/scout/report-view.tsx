@@ -105,7 +105,8 @@ export function ReportView({ id }: { id: string }) {
 
         <div className="mt-10 grid gap-10 lg:grid-cols-[13rem_minmax(0,1fr)]">
           <SectionNav sections={sections} />
-          <div>
+          {/* min-w-0 keeps wide section tables inside their own scroll container. */}
+          <div className="min-w-0">
             {sections.map((section) => (
               <SectionCard key={section.key} section={section} />
             ))}
@@ -125,7 +126,12 @@ function orderSections(sections: AnySection[]): AnySection[] {
 }
 
 function Shell({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
+  // Bridges the swap from BootState to the first payload.
+  return (
+    <main className="scout-enter mx-auto max-w-6xl px-4 py-8 sm:px-6">
+      {children}
+    </main>
+  )
 }
 
 function Headline({ evaluation }: { evaluation: Evaluation }) {
@@ -195,8 +201,8 @@ function Banner({
     <div
       className={
         tone === "warn"
-          ? "flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
-          : "flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm"
+          ? "scout-enter flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+          : "scout-enter flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm"
       }
     >
       <span
@@ -224,7 +230,7 @@ function Notice({
   phase?: string
 }) {
   return (
-    <div className="mx-auto max-w-xl space-y-4 py-24 text-center">
+    <div className="scout-enter mx-auto max-w-xl space-y-4 py-24 text-center">
       <Label>{phase ? `failed at ${phase.replace(/_/g, " ")}` : "error"}</Label>
       <h1 className="text-xl font-medium">{title}</h1>
       <p className="text-sm text-muted-foreground">{message}</p>

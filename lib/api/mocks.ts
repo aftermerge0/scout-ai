@@ -119,6 +119,17 @@ export async function mockGetEvaluation(
   return { notModified: false, data, etag: data.poll.etag }
 }
 
+/**
+ * A finished fixture evaluation, used by the landing page to preview the real
+ * report components. Sample data, not a live evaluation.
+ */
+export function sampleEvaluation(input = "linear.app"): Evaluation {
+  return buildEvaluation(
+    { id: "sample", input, startedAt: 0, scenario: "completed" },
+    DONE_AT
+  )
+}
+
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }

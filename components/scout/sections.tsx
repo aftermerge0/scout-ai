@@ -202,7 +202,7 @@ function FeatureAnalysis({ data }: { data: FeatureAnalysisData }) {
               <Quality value={feature.quality} />
             </Cell>
             <Cell className="text-muted-foreground">
-              {feature.notes ?? <Empty>—</Empty>}
+              {feature.notes ?? <Empty>-</Empty>}
             </Cell>
             <Cell>
               <EvidenceChips ids={feature.evidenceIds} />
@@ -338,7 +338,7 @@ function SecurityCompliance({ data }: { data: SecurityComplianceData }) {
                 </Pill>
               </Cell>
               <Cell className="text-muted-foreground">
-                {control.notes ?? <Empty>—</Empty>}
+                {control.notes ?? <Empty>-</Empty>}
               </Cell>
               <Cell>
                 <EvidenceChips ids={control.evidenceIds} />
@@ -417,7 +417,7 @@ function PricingIntelligence({ data }: { data: PricingIntelligenceData }) {
                 ) : null}
               </Cell>
               <Cell className="text-muted-foreground">
-                {plan.notes ?? <Empty>—</Empty>}
+                {plan.notes ?? <Empty>-</Empty>}
               </Cell>
               <Cell>
                 <EvidenceChips ids={plan.evidenceIds} />
@@ -447,7 +447,7 @@ function PricingIntelligence({ data }: { data: PricingIntelligenceData }) {
                   </Pill>
                 </Cell>
                 <Cell className="text-muted-foreground">
-                  {row.notes ?? <Empty>—</Empty>}
+                  {row.notes ?? <Empty>-</Empty>}
                 </Cell>
               </Row>
             ))}

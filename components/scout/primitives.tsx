@@ -79,7 +79,7 @@ export function Tags({ items }: { items: string[] }) {
 
 export function Bullets({
   items,
-  marker = "—",
+  marker = "-",
   className,
 }: {
   items: string[]
@@ -101,7 +101,7 @@ export function Bullets({
   )
 }
 
-/** Horizontal 0–100 meter with a mono readout. */
+/** Horizontal 0-100 meter with a mono readout. */
 export function Meter({
   value,
   label,
@@ -123,7 +123,7 @@ export function Meter({
       <div className="h-1.5 w-full max-w-56 overflow-hidden rounded-full bg-muted">
         <div
           className={cn(
-            "h-full rounded-full transition-all duration-700",
+            "h-full rounded-full transition-[width] duration-500 ease-[var(--ease-out)]",
             toneClass
           )}
           style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
@@ -157,7 +157,7 @@ const PRESENCE_GLYPH: Record<PresenceLevel, string> = {
   yes: "yes",
   limited: "limited",
   no: "no",
-  unknown: "—",
+  unknown: "-",
 }
 
 const QUALITY_TONE: Record<QualityLevel, string> = {
@@ -280,7 +280,7 @@ export function Confidence({
         inferred ? "text-muted-foreground/70 italic" : "text-muted-foreground",
         className
       )}
-      title={inferred ? "Inferred — low confidence" : undefined}
+      title={inferred ? "Inferred: low confidence" : undefined}
     >
       {value}%{inferred ? " inferred" : ""}
     </span>
