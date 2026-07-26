@@ -252,19 +252,30 @@ scout-ai/
 
 ## Implementation phases (backend-led)
 
-### Phase 0 — Contract + stub API (FE unblocking)
+### Phase 0 — Contract + stub API (FE unblocking) — done
 
-- Keep [`API_CONTRACT.md`](./API_CONTRACT.md) as source of truth
-- Bootstrap Next.js + Prisma + Inngest skeleton
-- Implement `/api/v1/*` stub mode returning fixtures
-- Share preview URL with frontend friend
+- [`API_CONTRACT.md`](./API_CONTRACT.md) is the source of truth
+- Implemented `/api/v1/health`, `/api/v1/evaluations` (POST), `/api/v1/evaluations/[id]` (GET, ETag/304), `/api/v1/evaluations/[id]/evidence` (GET)
+- Backing logic lives in `lib/evaluations/`:
+  - `domain.ts` — entity resolution from raw input (URL / bare domain / company name); inputs containing `"fail"` simulate a pipeline failure for FE testing
+  - `generate-content.ts` — deterministic, contract-shaped section/finding/evidence content per company
+  - `progress.ts` — pure function mapping elapsed time → phase/percent/section statuses (no timers, so it's safe to recompute on any request)
+  - `store.ts` — in-memory record store (dev-safe global singleton; **not** durable across serverless cold starts — Phase 1 replaces this with Prisma)
+  - `to-dto.ts` — maps a record → the exact `EvaluationDto` contract shape, including ETag + `poll`
+- `lib/api-types.ts` mirrors the contract 1:1; `lib/api-errors.ts` provides the `{ data }` / `{ error }` envelope helpers
+- Inngest client + `/api/inngest` route + `evaluate-company` function skeleton added (`inngest/`) — documents the Phase 1-3 steps but is **not yet wired** to the API
+- Prisma schema added (`prisma/schema.prisma`, Prisma ORM 7 style: `prisma-client` generator + `@prisma/adapter-pg`, config in `prisma.config.ts`) — schema is ready but not yet used by any route
+- Verified via `bun run typecheck`, `bun run lint`, and live curl testing of the full create → poll → complete flow, the 404 case, ETag/304, evidence filtering, and the simulated failure path
+
+**Known limitation (by design):** the in-memory store means evaluations don't persist across server restarts or multiple serverless instances. This is acceptable for local FE development and demo now; Phase 1 below removes this limitation without changing the API contract.
 
 ### Phase 1 — Persistence + job skeleton
 
-- Prisma models + migrations on Neon
-- Real `POST` creates DB rows + enqueues Inngest
-- Real `GET` assembles DTO from DB (sections start pending)
-- Progress/phase updates from job steps
+- Set a real `DATABASE_URL` (Neon) and run `bun run db:generate` + `bun run db:push`
+- Swap `lib/evaluations/store.ts` for Prisma-backed reads/writes (same `EvaluationRecord`-shaped interface so `to-dto.ts` barely changes)
+- Real `POST` creates DB rows + sends the `scout/evaluation.requested` event to Inngest instead of running the local simulation
+- Real `GET` assembles the DTO from DB rows (sections start `pending`)
+- Progress/phase updates come from the Inngest function's steps instead of the time-based simulator
 
 ### Phase 2 — Collectors
 
@@ -310,9 +321,11 @@ Frontend phases run in parallel from Phase 0 using mocks/stubs.
 ## Todos
 
 - [x] Freeze API contract + fixtures + FE handoff doc
-- [ ] Bootstrap Next.js + Prisma/Neon + Inngest; add `lib/api-types.ts` from contract
-- [ ] Ship stub `/api/v1/evaluations` (+ GET) for FE (`SCOUT_API_MODE=stub`)
-- [ ] Real create/get DTO + Inngest skeleton with phase updates
+- [x] Bootstrap Next.js deps (Prisma/Neon + Inngest); add `lib/api-types.ts` from contract
+- [x] Ship working `/api/v1/evaluations` (POST + GET) + `/evidence` + `/health` backed by a deterministic in-memory simulation
+- [x] ETag/304 support on `GET /api/v1/evaluations/[id]`
+- [x] Prisma schema + Inngest client/function skeleton (not wired yet)
+- [ ] Wire real Prisma persistence + Inngest event dispatch (replace `lib/evaluations/store.ts`)
 - [ ] Firecrawl official + Exa external collectors
 - [ ] Azure section agents + recommendation + findings
-- [ ] Cache, rate limit, ETag, polish, README
+- [ ] Cache, rate limit, polish, README

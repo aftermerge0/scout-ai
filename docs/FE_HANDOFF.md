@@ -39,7 +39,15 @@ You can start UI **now**. Backend will match this contract; no guessing.
 
 Do **not** call `/api/inngest`.
 
-## Local mocks
+## Live stub API (recommended over mocks)
+
+The real `/api/v1` routes are implemented now (`bun run dev`, http://localhost:3000). They run a deterministic **simulated** pipeline (no real Firecrawl/Exa/Azure calls yet — see `lib/evaluations/`) but return the exact contract shape, so you can point the app straight at it instead of hand-written mocks:
+
+- Any `input` progresses through `queued → running → completed` over ~40s (fast on purpose for dev).
+- Any input containing `"fail"` (e.g. `"failcorp.example"`) simulates a `failed` evaluation after ~5s — use this to build the error state.
+- Company name / domain / evidence content is generated generically from your input, so it works for any string.
+
+## Local mocks (fallback if you want to work offline)
 
 ```ts
 const USE_MOCKS = process.env.NEXT_PUBLIC_USE_API_MOCKS === "true";

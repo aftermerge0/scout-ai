@@ -106,7 +106,19 @@ Full completed example is large — see [`../API_CONTRACT.md`](../API_CONTRACT.m
       "bestSuitedFor": [],
       "avoidIf": []
     },
-    "sections": [],
+    "sections": [
+      { "key": "executive_summary", "title": "Executive Summary", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "company_overview", "title": "Company Overview", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "product_overview", "title": "Product Overview", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "feature_analysis", "title": "Feature Analysis", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "community_sentiment", "title": "Community Sentiment", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "security_compliance", "title": "Security & Compliance", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "pricing_intelligence", "title": "Pricing Intelligence", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "competitor_analysis", "title": "Competitor Analysis", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "engineering_health", "title": "Engineering Health", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "risk_assessment", "title": "Risk Assessment", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null },
+      { "key": "recommendation", "title": "Recommendation", "status": "pending", "confidence": null, "updatedAt": null, "error": null, "data": null }
+    ],
     "findings": [],
     "evidence": [],
     "poll": {
@@ -117,6 +129,8 @@ Full completed example is large — see [`../API_CONTRACT.md`](../API_CONTRACT.m
   }
 }
 ```
+
+> Note: `sections` always contains all 11 keys, even on failure — render skeletons/pending state rather than omitting them.
 
 ## `evaluation.running.json` (mid-analysis)
 

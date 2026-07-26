@@ -34,3 +34,6 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# prisma (generated client; regenerate with `bun run db:generate`)
+/lib/generated/
