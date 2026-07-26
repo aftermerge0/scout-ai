@@ -51,7 +51,7 @@ export function EvidenceChip({ evidence }: { evidence: Evidence }) {
             target="_blank"
             rel="noreferrer"
             className={cn(
-              "inline-flex max-w-52 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-[11px] transition-colors",
+              "inline-flex max-w-52 items-center gap-1 rounded-sm border px-1.5 py-0.5 font-mono text-[11px] transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.97]",
               official
                 ? "border-sky-500/30 bg-sky-500/10 text-sky-700 hover:bg-sky-500/20 dark:text-sky-300"
                 : "border-border bg-muted/50 text-muted-foreground hover:bg-muted"

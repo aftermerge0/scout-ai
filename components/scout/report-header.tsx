@@ -37,7 +37,11 @@ export function ReportHeader({ evaluation }: { evaluation: Evaluation }) {
           ) : null}
         </div>
 
-        <div className="ml-auto flex items-center gap-4">
+        {/* The verdict lands mid-run; keyed so it eases in rather than popping. */}
+        <div
+          key={summary.overallScore === null ? "pending" : "scored"}
+          className="scout-enter ml-auto flex items-center gap-4"
+        >
           {summary.overallScore !== null ? (
             <span className="font-mono text-lg tabular-nums">
               {summary.overallScore.toFixed(1)}
@@ -45,7 +49,7 @@ export function ReportHeader({ evaluation }: { evaluation: Evaluation }) {
             </span>
           ) : (
             <span className="font-mono text-lg text-muted-foreground/40 tabular-nums">
-              —.—
+              -.-
             </span>
           )}
           {summary.verdict ? <VerdictPill verdict={summary.verdict} /> : null}
@@ -56,7 +60,7 @@ export function ReportHeader({ evaluation }: { evaluation: Evaluation }) {
       {running ? (
         <div className="h-0.5 w-full bg-muted">
           <div
-            className="h-full bg-foreground transition-all duration-700"
+            className="h-full bg-foreground transition-[width] duration-500 ease-[var(--ease-out)]"
             style={{ width: `${progress.percent}%` }}
           />
         </div>
@@ -65,7 +69,7 @@ export function ReportHeader({ evaluation }: { evaluation: Evaluation }) {
   )
 }
 
-/** Phase rail — one line per pipeline phase, mirrors progress.phases. */
+/** Phase rail: one line per pipeline phase, mirrors progress.phases. */
 export function ProgressRail({ evaluation }: { evaluation: Evaluation }) {
   const { progress } = evaluation
 
@@ -86,7 +90,7 @@ export function ProgressRail({ evaluation }: { evaluation: Evaluation }) {
             <li key={key} className="flex items-center gap-2">
               <span
                 className={cn(
-                  "flex size-4 shrink-0 items-center justify-center rounded-full border",
+                  "flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors duration-200 ease-[var(--ease-out)]",
                   state === "completed" &&
                     "border-emerald-500/40 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
                   state === "running" && "border-amber-500/50 bg-amber-500/10",
@@ -95,9 +99,13 @@ export function ProgressRail({ evaluation }: { evaluation: Evaluation }) {
                 )}
               >
                 {state === "completed" ? (
-                  <CheckIcon className="size-2.5" />
+                  // Keyed so the tick eases in when the phase resolves.
+                  <CheckIcon
+                    key="done"
+                    className="size-2.5 animate-[phase-check_160ms_var(--ease-out)_both]"
+                  />
                 ) : state === "running" ? (
-                  <LoaderIcon className="size-2.5 animate-spin text-amber-500" />
+                  <LoaderIcon className="size-2.5 animate-spin text-amber-500 [animation-duration:0.7s]" />
                 ) : state === "failed" ? (
                   <span className="font-mono text-[9px] text-red-500">×</span>
                 ) : null}

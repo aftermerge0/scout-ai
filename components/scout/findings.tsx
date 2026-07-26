@@ -16,7 +16,7 @@ export function Findings({ findings }: { findings: Finding[] }) {
   )
 
   return (
-    <div className="rounded-md border border-border">
+    <div className="scout-enter rounded-md border border-border">
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <Label>Findings</Label>
         <span className="font-mono text-xs text-muted-foreground tabular-nums">
@@ -25,7 +25,7 @@ export function Findings({ findings }: { findings: Finding[] }) {
       </div>
       <ul className="divide-y divide-dashed divide-border">
         {sorted.map((finding) => (
-          <li key={finding.id} className="space-y-1.5 px-4 py-3">
+          <li key={finding.id} className="scout-enter space-y-1.5 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <Pill tone={finding.severity}>{finding.severity}</Pill>
               <span className="text-sm font-medium">{finding.title}</span>

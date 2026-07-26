@@ -102,8 +102,8 @@ export function EvaluateForm() {
           <PromptInputTextarea
             value={input}
             onChange={(event) => setInput(event.currentTarget.value)}
-            placeholder="Company name, domain, or URL — e.g. linear.app"
-            className="min-h-16 font-mono text-sm"
+            placeholder="Company name, domain, or URL"
+            className="min-h-14 font-mono text-sm"
             maxLength={200}
             autoFocus
           />
@@ -189,20 +189,23 @@ export function EvaluateForm() {
         </CollapsibleContent>
       </Collapsible>
 
-      <Suggestions>
-        {EXAMPLES.map((example) => (
-          <Suggestion
-            key={example}
-            suggestion={example}
-            onClick={(value) => {
-              setInput(value)
-              void submit(value)
-            }}
-            className="font-mono text-xs"
-            disabled={submitting}
-          />
-        ))}
-      </Suggestions>
+      <div className="flex flex-wrap items-center gap-2">
+        <Label className="mr-1">Try</Label>
+        <Suggestions>
+          {EXAMPLES.map((example) => (
+            <Suggestion
+              key={example}
+              suggestion={example}
+              onClick={(value) => {
+                setInput(value)
+                void submit(value)
+              }}
+              className="h-7 rounded-md px-2.5 font-mono text-xs transition-[color,background-color,transform] duration-150 ease-[var(--ease-out)] active:scale-[0.97]"
+              disabled={submitting}
+            />
+          ))}
+        </Suggestions>
+      </div>
 
       {error ? (
         <p className="font-mono text-xs text-red-600 dark:text-red-400">

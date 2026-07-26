@@ -27,7 +27,7 @@ export function StatusDot({
     <span
       aria-hidden
       className={cn(
-        "size-1.5 shrink-0 rounded-full",
+        "size-1.5 shrink-0 rounded-full transition-colors duration-200 ease-[var(--ease-out)]",
         STATUS_DOT[status],
         className
       )}
@@ -78,7 +78,7 @@ export function SectionCard({ section }: { section: AnySection }) {
       </header>
 
       {section.status === "failed" ? (
-        <div className="flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm">
+        <div className="scout-enter flex items-start gap-2 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm">
           <AlertTriangleIcon className="mt-0.5 size-4 shrink-0 text-red-500" />
           <div>
             <p className="font-medium">This section could not be completed.</p>
@@ -88,7 +88,10 @@ export function SectionCard({ section }: { section: AnySection }) {
           </div>
         </div>
       ) : section.status === "completed" ? (
-        <SectionBody section={section} />
+        // Keyed so the enter animation replays when the skeleton is replaced.
+        <div key="body" className="scout-enter">
+          <SectionBody section={section} />
+        </div>
       ) : (
         <SectionSkeleton />
       )}
