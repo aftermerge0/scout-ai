@@ -133,25 +133,40 @@ const pricingIntelligenceSchema = z.object({
   claims: z.array(claimSchema),
 }) satisfies z.ZodType<SectionDataByKey["pricing_intelligence"]>;
 
-const competitorAnalysisSchema = z.object({
-  competitors: z.array(
-    z.object({
-      name: z.string(),
-      domain: z.string().nullable(),
-      positioning: z.string().nullable(),
-      strengths: z.array(z.string()),
-      weaknesses: z.array(z.string()),
-      evidenceIds: z.array(z.string()),
-    }),
-  ),
-  featureMatrix: z.array(
-    z.object({
-      feature: z.string(),
-      values: z.record(z.string(), featurePresence),
-    }),
-  ),
-  claims: z.array(claimSchema),
-}) satisfies z.ZodType<SectionDataByKey["competitor_analysis"]>;
+// Azure structured outputs reject JSON Schema `propertyNames` from `z.record`.
+// Model emits competitor/presence rows; transform restores contract `Record` shape.
+const competitorAnalysisSchema = z
+  .object({
+    competitors: z.array(
+      z.object({
+        name: z.string(),
+        domain: z.string().nullable(),
+        positioning: z.string().nullable(),
+        strengths: z.array(z.string()),
+        weaknesses: z.array(z.string()),
+        evidenceIds: z.array(z.string()),
+      }),
+    ),
+    featureMatrix: z.array(
+      z.object({
+        feature: z.string(),
+        values: z.array(
+          z.object({
+            competitor: z.string(),
+            presence: featurePresence,
+          }),
+        ),
+      }),
+    ),
+    claims: z.array(claimSchema),
+  })
+  .transform((data): SectionDataByKey["competitor_analysis"] => ({
+    ...data,
+    featureMatrix: data.featureMatrix.map((row) => ({
+      feature: row.feature,
+      values: Object.fromEntries(row.values.map((v) => [v.competitor, v.presence])),
+    })),
+  }));
 
 const engineeringHealthSchema = z.object({
   documentationQuality: qualityLevel,

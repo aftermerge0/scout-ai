@@ -56,11 +56,16 @@ export async function runEvaluationPipeline({
     const resolved = await resolveEntityLive(input)
     await repo.setEntity(evaluationId, resolved)
 
-    // --- Collect -----------------------------------------------------------
+    // --- Collect (official + external in parallel) -------------------------
     await repo.setPhase(evaluationId, "collecting_official")
-    const officialPages = resolved.normalizedUrl
-      ? await collectOfficialSources(resolved.normalizedUrl)
-      : []
+    const [officialPages, externalResults] = await Promise.all([
+      resolved.normalizedUrl
+        ? collectOfficialSources(resolved.normalizedUrl)
+        : Promise.resolve([]),
+      collectExternalSources(resolved.companyName),
+    ])
+    await repo.setPhase(evaluationId, "collecting_external")
+
     if (officialPages.length > 0) {
       await repo.addEvidence(
         evaluationId,
@@ -75,9 +80,6 @@ export async function runEvaluationPipeline({
         }))
       )
     }
-
-    await repo.setPhase(evaluationId, "collecting_external")
-    const externalResults = await collectExternalSources(resolved.companyName)
     if (externalResults.length > 0) {
       await repo.addEvidence(
         evaluationId,
@@ -122,13 +124,16 @@ export async function runEvaluationPipeline({
       })),
     ]
 
-    // --- Analyze -----------------------------------------------------------
+    // --- Analyze (fan-out; recommendation/summary stay sequential) ---------
     await repo.setPhase(evaluationId, "analyzing", "running")
     const sectionResults: Partial<Record<SectionKey, AnySectionAgentResult>> = {}
 
-    for (const key of ANALYSIS_KEYS) {
-      await repo.setSectionRunning(evaluationId, key)
-      try {
+    await Promise.all(
+      ANALYSIS_KEYS.map((key) => repo.setSectionRunning(evaluationId, key))
+    )
+
+    const analysisOutcomes = await Promise.allSettled(
+      ANALYSIS_KEYS.map(async (key) => {
         const result = await runSectionAgent({
           key,
           companyName: resolved.companyName,
@@ -142,20 +147,29 @@ export async function runEvaluationPipeline({
           result.data,
           result.confidence
         )
-        sectionResults[key] = result
-      } catch (err) {
-        // One failed section degrades the report to `partial`; it does not
-        // abort the run.
-        const error: ApiError = {
-          code: "DEPENDENCY_UNAVAILABLE",
-          message:
-            err instanceof Error
-              ? err.message
-              : `Failed to analyze ${SECTION_TITLES[key]}.`,
-          phase: "analyzing",
-        }
-        await repo.failSection(evaluationId, key, error)
+        return { key, result }
+      })
+    )
+
+    for (let i = 0; i < analysisOutcomes.length; i++) {
+      const key = ANALYSIS_KEYS[i]!
+      const outcome = analysisOutcomes[i]!
+      if (outcome.status === "fulfilled") {
+        sectionResults[key] = outcome.value.result
+        continue
       }
+      // One failed section degrades the report to `partial`; it does not
+      // abort the run.
+      const err = outcome.reason
+      const error: ApiError = {
+        code: "DEPENDENCY_UNAVAILABLE",
+        message:
+          err instanceof Error
+            ? err.message
+            : `Failed to analyze ${SECTION_TITLES[key]}.`,
+        phase: "analyzing",
+      }
+      await repo.failSection(evaluationId, key, error)
     }
 
     // --- Recommend ---------------------------------------------------------
