@@ -97,7 +97,7 @@ export function EvaluateForm() {
 
   return (
     <div className="space-y-4">
-      <PromptInput onSubmit={handleSubmit} className="rounded-lg">
+      <PromptInput onSubmit={handleSubmit} className="rounded-lg bg-background">
         <PromptInputBody>
           <PromptInputTextarea
             value={input}
