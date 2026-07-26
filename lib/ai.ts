@@ -14,6 +14,6 @@ export function azure(): AzureOpenAIProvider {
 }
 
 /** Default chat model — arg is the Azure deployment name, not the OpenAI model id. */
-export function model(deployment = env.AZURE_DEPLOYMENT_NAME): LanguageModel {
+export function model(deployment: string = env.AZURE_DEPLOYMENT_NAME ?? ""): LanguageModel {
   return azure()(deployment);
 }

@@ -53,7 +53,12 @@ export function toEvaluationDto(
     (finding) => progress.sectionStatuses[finding.sectionKey] === "completed",
   );
 
-  const evidence = opts.includeEvidence === "none" ? [] : record.content.evidence;
+  const evidence =
+    opts.includeEvidence === "none"
+      ? []
+      : opts.includeEvidence === "summary"
+        ? record.content.evidence.slice(0, 40)
+        : record.content.evidence;
 
   const execDone = progress.sectionStatuses.executive_summary === "completed";
   const summary = execDone

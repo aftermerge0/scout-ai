@@ -200,33 +200,37 @@ Target: **under 5 minutes** via parallel scrape/search/agents.
 
 ```
 scout-ai/
-  app/api/v1/evaluations/route.ts          # POST
-  app/api/v1/evaluations/[id]/route.ts     # GET
+  app/api/v1/evaluations/route.ts          # POST (branches stub/live via lib/env.ts)
+  app/api/v1/evaluations/[id]/route.ts     # GET (ETag/304, stub or live DTO mapper)
   app/api/v1/evaluations/[id]/evidence/route.ts
   app/api/v1/health/route.ts
   app/api/inngest/route.ts
   lib/
     api-types.ts                           # shared contract types (FE copies or imports)
     api-errors.ts                          # error envelope helpers
-    db.ts
-    firecrawl.ts
-    exa.ts
-    azure-openai.ts
+    env.ts                                 # centralized zod-validated env config
+    db.ts                                  # Prisma client (adapter-pg)
+    firecrawl.ts / exa.ts / azure-openai.ts # lazy SDK client singletons
     evaluations/
-      create-evaluation.ts
-      get-evaluation-dto.ts                 # maps DB → contract DTO
-      etag.ts
+      store.ts / progress.ts / generate-content.ts / to-dto.ts   # stub pipeline (Phase 0)
+      domain.ts                            # pure entity resolution (used by both stub + live)
+      repository.ts                        # Prisma CRUD (live pipeline)
+      db-to-dto.ts                         # maps Prisma row -> contract DTO (live pipeline)
+      rate-limit.ts                        # in-memory per-IP limiter
+      validation.ts                        # zod request schemas
     collectors/
-      official.ts
-      external.ts
-      entity.ts
+      entity.ts (Exa fallback for name-only input)
+      official.ts (Firecrawl map + scored scrape)
+      external.ts (Exa multi-query)
     agents/
-      run-section-agent.ts
-      prompts/
-      schemas/                             # zod per SectionKey
+      schemas.ts                           # zod per SectionKey, matches api-types exactly
+      prompts.ts
+      run-section-agent.ts                 # generic generateObject runner
+      findings.ts                          # risk_assessment -> top-level findings[]
   inngest/
     client.ts
-    functions/evaluate-company.ts
+    functions/evaluate-company.ts          # full durable pipeline
+  prisma/schema.prisma
   docs/
     API_CONTRACT.md
     PLAN.md
@@ -238,15 +242,19 @@ scout-ai/
 
 ## Env vars (Vercel)
 
+All read through `lib/env.ts` (zod-validated; see `.env.example` for the authoritative list):
+
 - `DATABASE_URL`
-- `FIRECRAWL_API_KEY`
+- `FIRECRAWL_API_KEY` (+ optional `FIRECRAWL_API_URL` for self-hosted)
 - `EXA_API_KEY`
 - `AZURE_OPENAI_API_KEY`
 - `AZURE_OPENAI_ENDPOINT`
 - `AZURE_OPENAI_DEPLOYMENT`
 - `AZURE_OPENAI_API_VERSION`
-- `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY`
+- `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` (auto-detected as dev mode locally when unset)
 - `SCOUT_API_MODE` = `stub` \| `live`
+- `SCOUT_RATE_LIMIT_PER_MINUTE` (default `5`), `SCOUT_DEDUPE_WINDOW_HOURS` (default `24`)
+- `AZURE_RESOURCE_NAME` / `AZURE_API_KEY` / `AZURE_DEPLOYMENT_NAME` — separate from the `AZURE_OPENAI_*` vars above; used by the frontend's own AI chat feature (`lib/ai.ts`), not the evaluation pipeline
 
 ---
 
@@ -269,36 +277,37 @@ scout-ai/
 
 **Known limitation (by design):** the in-memory store means evaluations don't persist across server restarts or multiple serverless instances. This is acceptable for local FE development and demo now; Phase 1 below removes this limitation without changing the API contract.
 
-### Phase 1 — Persistence + job skeleton
+### Phase 1 — Persistence + job dispatch — done
 
-- Set a real `DATABASE_URL` (Neon) and run `bun run db:generate` + `bun run db:push`
-- Swap `lib/evaluations/store.ts` for Prisma-backed reads/writes (same `EvaluationRecord`-shaped interface so `to-dto.ts` barely changes)
-- Real `POST` creates DB rows + sends the `scout/evaluation.requested` event to Inngest instead of running the local simulation
-- Real `GET` assembles the DTO from DB rows (sections start `pending`)
-- Progress/phase updates come from the Inngest function's steps instead of the time-based simulator
+- `lib/env.ts` — centralized, zod-validated env config for every var in `.env.example` (`SCOUT_API_MODE`, `DATABASE_URL`, Firecrawl/Exa/Azure/Inngest keys, rate-limit/dedupe knobs). All routes/collectors/agents read config through this module, never `process.env` directly. `isLiveMode()` / `assertConfiguredFor(capability)` / `allMissingLiveModeConfig()` gate live-mode features with clear errors instead of deep `undefined` failures.
+- `lib/evaluations/repository.ts` — Prisma-backed CRUD (create with all 11 pending sections, entity/phase/section/finding/evidence writers, `markCompleted` / `markPartial` / `markFailed`, `findRecentByDomain` for dedupe) used whenever `SCOUT_API_MODE=live`.
+- `lib/evaluations/db-to-dto.ts` — maps a live Prisma row + relations to the exact `EvaluationDto` contract shape (phase/percent derivation, ETag from `updatedAt`+status+section count), the live-mode counterpart of the stub's `to-dto.ts`.
+- `app/api/v1/evaluations/*` routes now branch on `isLiveMode()`: stub mode is untouched (same in-memory simulation as Phase 0); live mode creates a real `Evaluation` row, sends `scout/evaluation.requested` to Inngest (client uses `isDev` so local dev doesn't need `INNGEST_EVENT_KEY` — run `bunx inngest-cli dev -u http://localhost:3000/api/inngest`), and reads progress straight from Postgres.
+- Verified end-to-end against a real local Postgres + the Inngest Dev Server: create → entity resolution → graceful `PIPELINE_FAILED` (no Firecrawl/Exa keys configured) → correct `phases[]`/`error.phase` in the polled DTO. DB writes, phase transitions, and error propagation all confirmed working; only the external API calls themselves are untested against real Firecrawl/Exa/Azure accounts.
 
-### Phase 2 — Collectors
+### Phase 2 — Collectors — done
 
-- Entity resolution
-- Firecrawl map/scrape with path scoring + credit caps
-- Exa multi-query collector
-- Evidence persistence (markdown server-side; snippets in API)
+- `lib/collectors/entity.ts` — reuses the Phase 0 `resolveEntity` for URL/domain input; falls back to an Exa "official website" search when given a bare company name. Degrades to the local-only result if Exa isn't configured.
+- `lib/collectors/official.ts` — Firecrawl `map()` the domain, score discovered paths by diligence relevance (pricing/security/docs/api/status/etc.), `scrape()` the top 8 as markdown. Best-effort: map/scrape/config failures degrade to fewer pages rather than throwing.
+- `lib/collectors/external.ts` — 6 parallel Exa queries (sentiment, competitors, security incidents, community discussion, pricing complaints, engineering signals), deduped and capped at 24 results.
+- `lib/firecrawl.ts` / `lib/exa.ts` — lazy singleton clients gated by `assertConfiguredFor`.
+- If both collectors return zero evidence, the pipeline stops and marks the evaluation `failed` with `PIPELINE_FAILED` (verified above) instead of running agents against nothing.
 
-### Phase 3 — Agents
+### Phase 3 — Agents — done
 
-- Zod schemas matching contract §8
-- Parallel section agents via Azure OpenAI (structured JSON)
-- Recommendation agent + findings (≥3 non-obvious risks)
-- Partial failure handling → `partial` status
+- `lib/agents/schemas.ts` — zod schema per section matching contract §8 exactly (`satisfies z.ZodType<SectionDataByKey[K]>` for compile-time drift protection).
+- `lib/agents/run-section-agent.ts` — generic, type-safe per-section runner (`SectionAgentResult<K>`) wrapping `generateObject` (Azure OpenAI via `lib/azure-openai.ts`) with a `{ confidence, data }` schema; builds an evidence block from collected official/external sources and (for `executive_summary`/`recommendation`) the already-completed sibling sections.
+- `lib/agents/findings.ts` — derives the contract's top-level `findings[]` from `risk_assessment.topRisks`, matching each to a risk category via shared evidenceIds.
+- `inngest/functions/evaluate-company.ts` — full durable pipeline: resolve → collect official → collect external → (fail fast if no evidence) → one Inngest step per analysis section (failures isolated per-section) → recommend + executive_summary (synthesizing all prior sections) → findings → `markCompleted`/`markPartial` depending on whether any section failed.
 
-### Phase 4 — Production hardening
+### Phase 4 — Production hardening — done (MVP-scope)
 
-- 24h domain cache / dedupe
-- Rate limit on `POST`
-- ETag / 304
-- Latency + credit caps
-- Observability logs per step
-- README + demo companies
+- `lib/evaluations/rate-limit.ts` — best-effort in-memory per-IP rate limit on `POST /api/v1/evaluations` (`SCOUT_RATE_LIMIT_PER_MINUTE`, default 5/min); verified returns `429 RATE_LIMITED` after the threshold.
+- 24h domain dedupe/cache implemented directly in the `POST` route per contract §4 ("Caching / dedupe behavior"): matching `domain` + identical `context` within `SCOUT_DEDUPE_WINDOW_HOURS` (default 24) returns the existing evaluation with `X-Scout-Cache: HIT`/`MISS`.
+- ETag/304 carried over from Phase 0, now also implemented for live-mode reads (`db-to-dto.ts`).
+- Firecrawl scrape timeout + page caps, Exa per-query/result caps (see Phase 2) bound latency and credit usage.
+- Structured `console.error` logging on all unhandled route errors (`lib/api-errors.ts`); per-step Inngest failures are persisted to `ReportSection.errorJson` / `Evaluation.errorJson` for inspection via `db:studio`.
+- Not done (explicitly deferred — no user-facing need yet): README rewrite with demo companies, and any cross-instance (Redis-backed) rate limiting — the in-memory limiter is single-instance/best-effort by design, matching the non-goals below.
 
 Frontend phases run in parallel from Phase 0 using mocks/stubs.
 
@@ -325,7 +334,9 @@ Frontend phases run in parallel from Phase 0 using mocks/stubs.
 - [x] Ship working `/api/v1/evaluations` (POST + GET) + `/evidence` + `/health` backed by a deterministic in-memory simulation
 - [x] ETag/304 support on `GET /api/v1/evaluations/[id]`
 - [x] Prisma schema + Inngest client/function skeleton (not wired yet)
-- [ ] Wire real Prisma persistence + Inngest event dispatch (replace `lib/evaluations/store.ts`)
-- [ ] Firecrawl official + Exa external collectors
-- [ ] Azure section agents + recommendation + findings
-- [ ] Cache, rate limit, polish, README
+- [x] Wire real Prisma persistence + Inngest event dispatch (`lib/evaluations/repository.ts`, `lib/env.ts`; stub store untouched for `SCOUT_API_MODE=stub`)
+- [x] Firecrawl official + Exa external collectors (`lib/collectors/*`)
+- [x] Azure section agents + recommendation + findings (`lib/agents/*`, `inngest/functions/evaluate-company.ts`)
+- [x] 24h dedupe cache + per-IP rate limit on `POST` (`lib/evaluations/rate-limit.ts`)
+- [ ] README rewrite with setup + demo companies
+- [ ] Real end-to-end run against live Firecrawl/Exa/Azure/Neon credentials (verified so far: DB persistence, phase transitions, graceful no-evidence failure — not yet verified: actual scrape/search/LLM output quality)
