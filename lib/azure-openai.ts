@@ -20,7 +20,10 @@ export function getAzureModel(): LanguageModel {
     ...(env.AZURE_OPENAI_API_VERSION ? { apiVersion: env.AZURE_OPENAI_API_VERSION } : {}),
   });
 
-  const model = azure.chat(env.AZURE_OPENAI_DEPLOYMENT!);
+  // Default provider call = Responses API. Reasoning-family deployments
+  // (gpt-5.x, codex) reject /chat/completions with "The requested operation
+  // is unsupported", so do not switch this back to azure.chat().
+  const model = azure(env.AZURE_OPENAI_DEPLOYMENT!);
   g.__scoutAzureModel = model;
   return model;
 }

@@ -1,6 +1,6 @@
+import { after } from "next/server";
 import { ZodError } from "zod";
 
-import { inngest } from "@/inngest/client";
 import { ApiRouteError, errorResponseFor, jsonOk } from "@/lib/api-errors";
 import type { CreateEvaluationResponse } from "@/lib/api-types";
 import { resolveEntity } from "@/lib/evaluations/domain";
@@ -9,9 +9,12 @@ import { createEvaluationRecord } from "@/lib/evaluations/store";
 import * as repo from "@/lib/evaluations/repository";
 import { toCreateEvaluationResponse } from "@/lib/evaluations/to-dto";
 import { clientIpFrom, checkRateLimit } from "@/lib/evaluations/rate-limit";
+import { runEvaluationPipeline } from "@/lib/evaluations/run-pipeline";
 import { env, isLiveMode } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
+// The pipeline runs in `after()`, inside this invocation's budget.
+export const maxDuration = 300;
 
 /** Compares the requested context against a stored `contextJson` value for cache-hit eligibility. */
 function contextsMatch(a: import("@/lib/api-types").EvaluationContext | null, storedContextJson: unknown): boolean {
@@ -64,9 +67,14 @@ export async function POST(request: Request) {
       };
     } else {
       const evaluation = await repo.createEvaluation(parsed.input, context);
-      await inngest.send({
-        name: "scout/evaluation.requested",
-        data: { evaluationId: evaluation.id, input: parsed.input, context },
+      // Respond 201 now; the pipeline keeps running after the response and
+      // reports progress by writing to the evaluation row.
+      after(async () => {
+        await runEvaluationPipeline({
+          evaluationId: evaluation.id,
+          input: parsed.input,
+          context,
+        });
       });
       responseBody = {
         id: evaluation.id,

@@ -56,7 +56,14 @@ function loadEnv(): Env {
   const g = globalThis as GlobalWithEnv;
   if (g.__scoutEnv) return g.__scoutEnv;
 
-  const parsed = rawEnvSchema.safeParse(process.env);
+  // A blank var in .env means "not configured", not "configured as empty".
+  // Without this, placeholder lines like `EXA_API_KEY=` fail `.min(1)` and
+  // take down every route instead of just disabling that capability.
+  const source = Object.fromEntries(
+    Object.entries(process.env).filter(([, value]) => value !== ""),
+  );
+
+  const parsed = rawEnvSchema.safeParse(source);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Invalid environment configuration:\n${issues}\n\nCheck .env against .env.example.`);
