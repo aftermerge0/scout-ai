@@ -474,6 +474,20 @@ const SECTION_DATA: { [K in SectionKey]: SectionDataMap[K] } = {
     customers: ["Vercel", "Ramp", "Cash App"],
     regions: ["Global"],
     recentGrowth: "Steady expansion into planning and agent workflows.",
+    founders: [
+      {
+        name: "Karri Saarinen",
+        role: "CEO & Co-founder",
+        background: "Design-led founder; previously design systems at Airbnb.",
+        evidenceIds: ["e-docs"],
+      },
+      {
+        name: "Tuomas Artman",
+        role: "CTO & Co-founder",
+        background: "Engineering co-founder focused on product architecture.",
+        evidenceIds: ["e-docs"],
+      },
+    ],
     claims: [
       {
         id: "c2",
@@ -560,6 +574,34 @@ const SECTION_DATA: { [K in SectionKey]: SectionDataMap[K] } = {
         theme: "Reporting depth",
         examples: ["Limited custom dashboards"],
         evidenceIds: ["e-g2"],
+      },
+    ],
+    reviews: [
+      {
+        source: "g2",
+        sourceLabel: "G2",
+        rating: "4.6/5",
+        reviewCount: "1,200+",
+        summary: "Customers praise speed and UX; analytics depth is the main gap.",
+        pros: ["Speed", "Keyboard-first UX", "Clean defaults"],
+        cons: ["Reporting", "Seat cost at scale"],
+        sampleQuotes: [
+          "Replaced Jira and never looked back for day-to-day work.",
+        ],
+        url: "https://www.g2.com/products/linear/reviews",
+        evidenceIds: ["e-g2"],
+      },
+      {
+        source: "glassdoor",
+        sourceLabel: "Glassdoor",
+        rating: "4.4/5",
+        reviewCount: "80+",
+        summary: "Employees highlight craft and pace; intensity is a recurring theme.",
+        pros: ["Craft culture", "High bar peers"],
+        cons: ["Pace / intensity"],
+        sampleQuotes: ["Best product culture I've seen — also the most demanding."],
+        url: "https://www.glassdoor.com/Reviews/Linear-Reviews-E.htm",
+        evidenceIds: ["e-hn"],
       },
     ],
     claims: [],

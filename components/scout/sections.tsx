@@ -1,7 +1,6 @@
 "use client"
 
 import type {
-  AnySection,
   CommunitySentimentData,
   CompanyOverviewData,
   CompetitorAnalysisData,
@@ -11,9 +10,11 @@ import type {
   PricingIntelligenceData,
   ProductOverviewData,
   RecommendationData,
+  ReviewSourceSummary,
   RiskAssessmentData,
   SecurityComplianceData,
 } from "@/types/scout-api"
+import type { AnySection } from "@/types/scout-api"
 
 import { Claims, EvidenceChips } from "./evidence"
 import {
@@ -62,6 +63,10 @@ export function SectionBody({ section }: { section: AnySection }) {
       return <RiskAssessment data={section.data} />
     case "recommendation":
       return <Recommendation data={section.data} />
+    default: {
+      const _exhaustive: never = section
+      return _exhaustive
+    }
   }
 }
 
@@ -76,6 +81,7 @@ function TwoUp({
   leftLabel: string
   rightLabel: string
 }) {
+  if (left.length === 0 && right.length === 0) return null
   return (
     <div className="grid gap-6 sm:grid-cols-2">
       <div className="space-y-2">
@@ -90,66 +96,123 @@ function TwoUp({
   )
 }
 
+/** Key/value only when a value exists — empty fields are noise. */
+function Fact({
+  label,
+  value,
+}: {
+  label: string
+  value: string | null | undefined
+}) {
+  if (value == null || value === "") return null
+  return (
+    <Field label={label}>
+      <Value>{value}</Value>
+    </Field>
+  )
+}
+
+function TagFact({ label, items }: { label: string; items: string[] }) {
+  if (items.length === 0) return null
+  return (
+    <Field label={label}>
+      <Tags items={items} />
+    </Field>
+  )
+}
+
 function ExecutiveSummary({ data }: { data: ExecutiveSummaryData }) {
+  // Score + verdict already live in the sticky header; keep this scannable.
   return (
     <div className="space-y-5">
-      <p className="text-base leading-relaxed text-balance">{data.headline}</p>
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="font-mono text-2xl tabular-nums">
-          {data.overallScore.toFixed(1)}
-          <span className="text-sm text-muted-foreground">/10</span>
-        </span>
-        <VerdictPill verdict={data.verdict} />
-      </div>
-      <div className="space-y-2">
-        <Label>Highlights</Label>
-        <Bullets items={data.highlights} />
-      </div>
-      <TwoUp
-        leftLabel="Best suited for"
-        rightLabel="Avoid if"
-        left={data.bestSuitedFor}
-        right={data.avoidIf}
-      />
+      {data.highlights.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Key takeaways</Label>
+          <Bullets items={data.highlights} />
+        </div>
+      ) : (
+        <p className="text-base leading-relaxed text-balance">{data.headline}</p>
+      )}
       <Claims claims={data.claims} />
     </div>
   )
 }
 
 function CompanyOverview({ data }: { data: CompanyOverviewData }) {
+  const hasFacts =
+    data.founded ||
+    data.hq ||
+    data.employees ||
+    data.funding ||
+    data.estimatedArr ||
+    data.investors.length > 0 ||
+    data.customers.length > 0 ||
+    data.regions.length > 0 ||
+    data.recentGrowth
+
   return (
-    <div>
-      <Field label="Founded">
-        <Value>{data.founded}</Value>
-      </Field>
-      <Field label="HQ">
-        <Value>{data.hq}</Value>
-      </Field>
-      <Field label="Employees">
-        <Value>{data.employees}</Value>
-      </Field>
-      <Field label="Funding">
-        <Value>{data.funding}</Value>
-      </Field>
-      <Field label="Estimated ARR">
-        <Value>{data.estimatedArr}</Value>
-      </Field>
-      <Field label="Investors">
-        <Tags items={data.investors} />
-      </Field>
-      <Field label="Customers">
-        <Tags items={data.customers} />
-      </Field>
-      <Field label="Regions">
-        <Tags items={data.regions} />
-      </Field>
-      <Field label="Recent growth">
-        {data.recentGrowth ? (
-          <span className="text-sm">{data.recentGrowth}</span>
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <Label>Founders</Label>
+        {data.founders.length > 0 ? (
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {data.founders.map((founder) => (
+              <li
+                key={founder.name}
+                className="space-y-1 rounded-md border border-border/80 bg-muted/20 px-3 py-3"
+              >
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-sm font-medium">{founder.name}</span>
+                  {founder.role ? (
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {founder.role}
+                    </span>
+                  ) : null}
+                  <EvidenceChips ids={founder.evidenceIds} />
+                </div>
+                {founder.background ? (
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {founder.background}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         ) : (
-          <Empty />
+          <p className="text-sm text-muted-foreground">
+            No founders named in collected sources yet.
+          </p>
         )}
-      </Field>
+      </div>
+
+      {hasFacts ? (
+        <div>
+          <Fact label="Founded" value={data.founded} />
+          <Fact label="HQ" value={data.hq} />
+          <Fact label="Employees" value={data.employees} />
+          <Fact label="Funding" value={data.funding} />
+          <Fact label="Estimated ARR" value={data.estimatedArr} />
+          <TagFact label="Investors" items={data.investors.slice(0, 8)} />
+          {data.investors.length > 8 ? (
+            <p className="pb-2 font-mono text-[11px] text-muted-foreground">
+              +{data.investors.length - 8} more named in sources
+            </p>
+          ) : null}
+          <TagFact label="Customers" items={data.customers.slice(0, 8)} />
+          {data.customers.length > 8 ? (
+            <p className="pb-2 font-mono text-[11px] text-muted-foreground">
+              +{data.customers.length - 8} more named in sources
+            </p>
+          ) : null}
+          <TagFact label="Regions" items={data.regions} />
+          {data.recentGrowth ? (
+            <Field label="Recent growth">
+              <span className="text-sm">{data.recentGrowth}</span>
+            </Field>
+          ) : null}
+        </div>
+      ) : null}
+
       <Claims claims={data.claims} />
     </div>
   )
@@ -160,39 +223,46 @@ function ProductOverview({ data }: { data: ProductOverviewData }) {
     <div className="space-y-5">
       <p className="text-sm leading-relaxed">{data.whatTheySell}</p>
       <div>
-        <Field label="Primary customers">
-          <Tags items={data.primaryCustomers} />
-        </Field>
-        <Field label="Use cases">
-          <Tags items={data.useCases} />
-        </Field>
-        <Field label="Differentiators">
-          <Tags items={data.differentiators} />
-        </Field>
+        <TagFact label="Primary customers" items={data.primaryCustomers} />
+        <TagFact label="Use cases" items={data.useCases} />
+        <TagFact label="Differentiators" items={data.differentiators} />
       </div>
-      <div className="space-y-2">
-        <Label>Core products</Label>
-        <DataTable head={["Product", "Description"]}>
-          {data.coreProducts.map((product) => (
-            <Row key={product.name}>
-              <Cell className="w-40 font-mono text-xs">{product.name}</Cell>
-              <Cell className="text-muted-foreground">
-                {product.description}
-              </Cell>
-            </Row>
-          ))}
-        </DataTable>
-      </div>
+      {data.coreProducts.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Core products</Label>
+          <ul className="space-y-2">
+            {data.coreProducts.map((product) => (
+              <li key={product.name} className="text-sm">
+                <span className="font-medium">{product.name}</span>
+                <span className="text-muted-foreground">
+                  {" — "}
+                  {product.description}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <Claims claims={data.claims} />
     </div>
   )
 }
 
 function FeatureAnalysis({ data }: { data: FeatureAnalysisData }) {
+  // Prefer known signals; unknowns alone just clutter the table.
+  const features = data.features.filter(
+    (f) => !(f.present === "unknown" && f.quality === "unknown" && !f.notes)
+  )
+  const rows = features.length > 0 ? features : data.features
+
+  if (rows.length === 0) {
+    return <Empty>No feature signals found</Empty>
+  }
+
   return (
     <div className="space-y-4">
-      <DataTable head={["Feature", "Present", "Quality", "Notes", "Sources"]}>
-        {data.features.map((feature) => (
+      <DataTable head={["Feature", "Present", "Quality", "Notes"]}>
+        {rows.map((feature) => (
           <Row key={feature.name}>
             <Cell className="font-mono text-xs">{feature.name}</Cell>
             <Cell>
@@ -202,10 +272,10 @@ function FeatureAnalysis({ data }: { data: FeatureAnalysisData }) {
               <Quality value={feature.quality} />
             </Cell>
             <Cell className="text-muted-foreground">
-              {feature.notes ?? <Empty>-</Empty>}
-            </Cell>
-            <Cell>
-              <EvidenceChips ids={feature.evidenceIds} />
+              <span className="inline-flex flex-wrap items-center gap-2">
+                {feature.notes ?? <Empty>-</Empty>}
+                <EvidenceChips ids={feature.evidenceIds} />
+              </span>
             </Cell>
           </Row>
         ))}
@@ -252,25 +322,174 @@ function ThemeList({
   )
 }
 
-function CommunitySentiment({ data }: { data: CommunitySentimentData }) {
+function ReviewCard({ review }: { review: ReviewSourceSummary }) {
+  const kind =
+    review.source === "glassdoor" || review.source === "ambitionbox"
+      ? "Employee"
+      : review.source === "g2" ||
+          review.source === "capterra" ||
+          review.source === "trustpilot"
+        ? "Customer"
+        : null
+
   return (
-    <div className="space-y-5">
+    <article className="space-y-3 rounded-md border border-border/80 bg-muted/15 px-3 py-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        {review.url ? (
+          <a
+            href={review.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-medium underline-offset-4 hover:underline"
+          >
+            {review.sourceLabel}
+          </a>
+        ) : (
+          <span className="text-sm font-medium">{review.sourceLabel}</span>
+        )}
+        {kind ? (
+          <span className="font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+            {kind}
+          </span>
+        ) : null}
+        {review.rating ? (
+          <span className="font-mono text-sm tabular-nums">{review.rating}</span>
+        ) : null}
+        {review.reviewCount ? (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {review.reviewCount} reviews
+          </span>
+        ) : null}
+        <EvidenceChips ids={review.evidenceIds} />
+      </div>
+      {review.summary ? (
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          {review.summary}
+        </p>
+      ) : null}
+      {(review.pros.length > 0 || review.cons.length > 0) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+            {review.pros.filter(Boolean).length > 0 ? (
+              <div className="space-y-1">
+                <Label>Pros</Label>
+                <Bullets items={review.pros.filter(Boolean)} marker="+" />
+              </div>
+            ) : null}
+            {review.cons.filter(Boolean).length > 0 ? (
+              <div className="space-y-1">
+                <Label>Cons</Label>
+                <Bullets items={review.cons.filter(Boolean)} marker="−" />
+              </div>
+            ) : null}
+        </div>
+      )}
+      {review.sampleQuotes.length > 0 ? (
+        <ul className="space-y-2">
+          {review.sampleQuotes.map((quote) => (
+            <li
+              key={quote}
+              className="border-l-2 border-border pl-3 text-sm text-muted-foreground italic"
+            >
+              “{quote}”
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </article>
+  )
+}
+
+function CommunitySentiment({ data }: { data: CommunitySentimentData }) {
+  const employeeReviews = data.reviews.filter(
+    (r) => r.source === "glassdoor" || r.source === "ambitionbox"
+  )
+  const customerReviews = data.reviews.filter(
+    (r) =>
+      r.source === "g2" ||
+      r.source === "capterra" ||
+      r.source === "trustpilot"
+  )
+  const otherReviews = data.reviews.filter(
+    (r) =>
+      r.source !== "glassdoor" &&
+      r.source !== "ambitionbox" &&
+      r.source !== "g2" &&
+      r.source !== "capterra" &&
+      r.source !== "trustpilot"
+  )
+
+  return (
+    <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <SentimentPill sentiment={data.overall} />
-        <span className="font-mono text-xs text-muted-foreground">
-          trend: {data.trend}
-        </span>
+        {data.trend !== "unknown" ? (
+          <span className="font-mono text-xs text-muted-foreground">
+            trend: {data.trend}
+          </span>
+        ) : null}
       </div>
-      <div className="grid gap-6 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label>What people like</Label>
-          <ThemeList themes={data.positiveThemes} tone="positive" />
+
+      {employeeReviews.length > 0 ? (
+        <div className="space-y-3">
+          <Label>Employee reviews</Label>
+          <div className="grid gap-3">
+            {employeeReviews.map((review) => (
+              <ReviewCard
+                key={`${review.source}-${review.sourceLabel}`}
+                review={review}
+              />
+            ))}
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label>What people complain about</Label>
-          <ThemeList themes={data.negativeThemes} tone="negative" />
+      ) : null}
+
+      {customerReviews.length > 0 ? (
+        <div className="space-y-3">
+          <Label>Customer reviews</Label>
+          <div className="grid gap-3">
+            {customerReviews.map((review) => (
+              <ReviewCard
+                key={`${review.source}-${review.sourceLabel}`}
+                review={review}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
+
+      {otherReviews.length > 0 ? (
+        <div className="space-y-3">
+          <Label>Other review sources</Label>
+          <div className="grid gap-3">
+            {otherReviews.map((review) => (
+              <ReviewCard
+                key={`${review.source}-${review.sourceLabel}`}
+                review={review}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {data.reviews.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No employee (Glassdoor / AmbitionBox) or customer (G2 / Capterra)
+          review pages were collected for this run.
+        </p>
+      ) : null}
+
+      {(data.positiveThemes.length > 0 || data.negativeThemes.length > 0) && (
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>What people like</Label>
+            <ThemeList themes={data.positiveThemes} tone="positive" />
+          </div>
+          <div className="space-y-2">
+            <Label>What people complain about</Label>
+            <ThemeList themes={data.negativeThemes} tone="negative" />
+          </div>
+        </div>
+      )}
       <Claims claims={data.claims} />
     </div>
   )
@@ -291,6 +510,9 @@ const CONTROL_TONE = {
 } as const
 
 function SecurityCompliance({ data }: { data: SecurityComplianceData }) {
+  const certs = data.certifications.filter((c) => c.status !== "unknown")
+  const controls = data.controls.filter((c) => c.status !== "unknown")
+
   return (
     <div className="space-y-5">
       <div className="space-y-2">
@@ -307,46 +529,49 @@ function SecurityCompliance({ data }: { data: SecurityComplianceData }) {
         />
       </div>
 
-      <div className="space-y-2">
-        <Label>Certifications</Label>
-        <DataTable head={["Certification", "Status", "Sources"]}>
-          {data.certifications.map((cert) => (
-            <Row key={cert.name}>
-              <Cell className="font-mono text-xs">{cert.name}</Cell>
-              <Cell>
+      {certs.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Certifications</Label>
+          <div className="flex flex-wrap gap-2">
+            {certs.map((cert) => (
+              <span
+                key={cert.name}
+                className="inline-flex items-center gap-2 rounded-md border border-border px-2 py-1"
+              >
+                <span className="font-mono text-xs">{cert.name}</span>
                 <Pill tone={CERT_TONE[cert.status]}>
                   {cert.status.replace("_", " ")}
                 </Pill>
-              </Cell>
-              <Cell>
                 <EvidenceChips ids={cert.evidenceIds} />
-              </Cell>
-            </Row>
-          ))}
-        </DataTable>
-      </div>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
-      <div className="space-y-2">
-        <Label>Controls</Label>
-        <DataTable head={["Control", "Status", "Notes", "Sources"]}>
-          {data.controls.map((control) => (
-            <Row key={control.name}>
-              <Cell className="font-mono text-xs">{control.name}</Cell>
-              <Cell>
-                <Pill tone={CONTROL_TONE[control.status]}>
-                  {control.status.replace("_", " ")}
-                </Pill>
-              </Cell>
-              <Cell className="text-muted-foreground">
-                {control.notes ?? <Empty>-</Empty>}
-              </Cell>
-              <Cell>
-                <EvidenceChips ids={control.evidenceIds} />
-              </Cell>
-            </Row>
-          ))}
-        </DataTable>
-      </div>
+      {controls.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Controls</Label>
+          <DataTable head={["Control", "Status", "Notes"]}>
+            {controls.map((control) => (
+              <Row key={control.name}>
+                <Cell className="font-mono text-xs">{control.name}</Cell>
+                <Cell>
+                  <Pill tone={CONTROL_TONE[control.status]}>
+                    {control.status.replace("_", " ")}
+                  </Pill>
+                </Cell>
+                <Cell className="text-muted-foreground">
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    {control.notes ?? <Empty>-</Empty>}
+                    <EvidenceChips ids={control.evidenceIds} />
+                  </span>
+                </Cell>
+              </Row>
+            ))}
+          </DataTable>
+        </div>
+      ) : null}
 
       {data.concerns.length > 0 ? (
         <div className="space-y-2">
@@ -393,43 +618,39 @@ function PricingIntelligence({ data }: { data: PricingIntelligenceData }) {
   return (
     <div className="space-y-5">
       <div>
-        <Field label="Model">
-          <Value>{data.model}</Value>
-        </Field>
-        <Field label="Free tier">
-          <Value>{data.freeTier}</Value>
-        </Field>
-        <Field label="Est. annual spend">
-          <Value>{data.estimatedAnnualSpend}</Value>
-        </Field>
+        <Fact label="Model" value={data.model} />
+        <Fact label="Free tier" value={data.freeTier} />
+        <Fact label="Est. annual spend" value={data.estimatedAnnualSpend} />
       </div>
 
-      <div className="space-y-2">
-        <Label>Plans</Label>
-        <DataTable head={["Plan", "Price", "Notes", "Sources"]}>
-          {data.plans.map((plan) => (
-            <Row key={plan.name}>
-              <Cell className="font-mono text-xs">{plan.name}</Cell>
-              <Cell className="font-mono text-xs whitespace-nowrap">
-                {plan.price ?? "custom"}
-                {plan.unit ? (
-                  <span className="text-muted-foreground"> {plan.unit}</span>
-                ) : null}
-              </Cell>
-              <Cell className="text-muted-foreground">
-                {plan.notes ?? <Empty>-</Empty>}
-              </Cell>
-              <Cell>
-                <EvidenceChips ids={plan.evidenceIds} />
-              </Cell>
-            </Row>
-          ))}
-        </DataTable>
-      </div>
+      {data.plans.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Plans</Label>
+          <DataTable head={["Plan", "Price", "Notes"]}>
+            {data.plans.map((plan) => (
+              <Row key={plan.name}>
+                <Cell className="font-mono text-xs">{plan.name}</Cell>
+                <Cell className="font-mono text-xs whitespace-nowrap">
+                  {plan.price ?? "custom"}
+                  {plan.unit ? (
+                    <span className="text-muted-foreground"> {plan.unit}</span>
+                  ) : null}
+                </Cell>
+                <Cell className="text-muted-foreground">
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    {plan.notes ?? <Empty>-</Empty>}
+                    <EvidenceChips ids={plan.evidenceIds} />
+                  </span>
+                </Cell>
+              </Row>
+            ))}
+          </DataTable>
+        </div>
+      ) : null}
 
       {data.hiddenCosts.length > 0 ? (
         <div className="space-y-2">
-          <Label>Hidden costs</Label>
+          <Label>Watch-outs</Label>
           <Bullets items={data.hiddenCosts} marker="!" />
         </div>
       ) : null}
@@ -461,6 +682,10 @@ function PricingIntelligence({ data }: { data: PricingIntelligenceData }) {
 }
 
 function CompetitorAnalysis({ data }: { data: CompetitorAnalysisData }) {
+  if (data.competitors.length === 0 && data.featureMatrix.length === 0) {
+    return <Empty>No competitors identified from sources</Empty>
+  }
+
   const columns =
     data.featureMatrix.length > 0
       ? Object.keys(data.featureMatrix[0].values)
@@ -470,12 +695,9 @@ function CompetitorAnalysis({ data }: { data: CompetitorAnalysisData }) {
     <div className="space-y-5">
       <div className="space-y-3">
         {data.competitors.map((competitor) => (
-          <div
-            key={competitor.name}
-            className="rounded-md border border-border p-3"
-          >
+          <div key={competitor.name} className="space-y-2 border-b border-dashed border-border pb-4 last:border-0 last:pb-0">
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="font-mono text-sm">{competitor.name}</span>
+              <span className="text-sm font-medium">{competitor.name}</span>
               {competitor.domain ? (
                 <span className="font-mono text-xs text-muted-foreground">
                   {competitor.domain}
@@ -484,18 +706,16 @@ function CompetitorAnalysis({ data }: { data: CompetitorAnalysisData }) {
               <EvidenceChips ids={competitor.evidenceIds} />
             </div>
             {competitor.positioning ? (
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 {competitor.positioning}
               </p>
             ) : null}
-            <div className="mt-3">
-              <TwoUp
-                leftLabel="Strengths"
-                rightLabel="Weaknesses"
-                left={competitor.strengths}
-                right={competitor.weaknesses}
-              />
-            </div>
+            <TwoUp
+              leftLabel="Strengths"
+              rightLabel="Weaknesses"
+              left={competitor.strengths}
+              right={competitor.weaknesses}
+            />
           </div>
         ))}
       </div>
@@ -536,11 +756,9 @@ function EngineeringHealth({ data }: { data: EngineeringHealthData }) {
         <Field label="SDK maturity">
           <Quality value={data.sdkMaturity} />
         </Field>
-        <Field label="Release cadence">
-          <Value>{data.releaseCadence}</Value>
-        </Field>
-        <Field label="Status page">
-          {data.statusPage.present && data.statusPage.url ? (
+        <Fact label="Release cadence" value={data.releaseCadence} />
+        {data.statusPage.present && data.statusPage.url ? (
+          <Field label="Status page">
             <a
               className="font-mono text-sm underline underline-offset-4"
               href={data.statusPage.url}
@@ -549,16 +767,10 @@ function EngineeringHealth({ data }: { data: EngineeringHealthData }) {
             >
               {data.statusPage.url}
             </a>
-          ) : (
-            <Empty />
-          )}
-        </Field>
-        <Field label="Open source">
-          <Value>{data.openSourceSignals}</Value>
-        </Field>
-        <Field label="Deprecation policy">
-          <Value>{data.deprecationPolicy}</Value>
-        </Field>
+          </Field>
+        ) : null}
+        <Fact label="Open source" value={data.openSourceSignals} />
+        <Fact label="Deprecation policy" value={data.deprecationPolicy} />
       </div>
       {data.notes.length > 0 ? <Bullets items={data.notes} /> : null}
       <Claims claims={data.claims} />
@@ -567,48 +779,51 @@ function EngineeringHealth({ data }: { data: EngineeringHealthData }) {
 }
 
 function RiskAssessment({ data }: { data: RiskAssessmentData }) {
+  const knownCategories = data.categories.filter((c) => c.level !== "unknown")
+
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
-        <Label>Top risks</Label>
-        <ul className="space-y-3">
-          {data.topRisks.map((risk) => (
-            <li
-              key={risk.title}
-              className="space-y-1 rounded-md border border-border p-3"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <RiskPill level={risk.severity} />
-                <span className="text-sm font-medium">{risk.title}</span>
-                <EvidenceChips ids={risk.evidenceIds} />
-              </div>
-              <p className="text-sm text-muted-foreground">{risk.summary}</p>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {data.topRisks.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Top risks</Label>
+          <ul className="space-y-3">
+            {data.topRisks.map((risk) => (
+              <li key={risk.title} className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <RiskPill level={risk.severity} />
+                  <span className="text-sm font-medium">{risk.title}</span>
+                  <EvidenceChips ids={risk.evidenceIds} />
+                </div>
+                <p className="text-sm text-muted-foreground">{risk.summary}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
-      <div className="space-y-2">
-        <Label>By category</Label>
-        <DataTable head={["Category", "Level", "Rationale", "Sources"]}>
-          {data.categories.map((category) => (
-            <Row key={category.category}>
-              <Cell className="font-mono text-xs whitespace-nowrap">
-                {category.category.replace(/_/g, " ")}
-              </Cell>
-              <Cell>
-                <RiskPill level={category.level} />
-              </Cell>
-              <Cell className="text-muted-foreground">
-                {category.rationale}
-              </Cell>
-              <Cell>
-                <EvidenceChips ids={category.evidenceIds} />
-              </Cell>
-            </Row>
-          ))}
-        </DataTable>
-      </div>
+      {knownCategories.length > 0 ? (
+        <div className="space-y-2">
+          <Label>By category</Label>
+          <DataTable head={["Category", "Level", "Rationale"]}>
+            {knownCategories.map((category) => (
+              <Row key={category.category}>
+                <Cell className="font-mono text-xs whitespace-nowrap">
+                  {category.category.replace(/_/g, " ")}
+                </Cell>
+                <Cell>
+                  <RiskPill level={category.level} />
+                </Cell>
+                <Cell className="text-muted-foreground">
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    {category.rationale}
+                    <EvidenceChips ids={category.evidenceIds} />
+                  </span>
+                </Cell>
+              </Row>
+            ))}
+          </DataTable>
+        </div>
+      ) : null}
 
       <Claims claims={data.claims} />
     </div>
@@ -624,18 +839,19 @@ function Recommendation({ data }: { data: RecommendationData }) {
           {data.overallScore.toFixed(1)}
           <span className="text-sm text-muted-foreground">/10</span>
         </span>
-        <span className="font-mono text-xs text-muted-foreground">
-          {data.confidence}% confidence
-        </span>
       </div>
-      <div className="space-y-2">
-        <Label>Why</Label>
-        <Bullets items={data.why} marker="+" />
-      </div>
-      <div className="space-y-2">
-        <Label>Conditions</Label>
-        <Bullets items={data.caveats} marker="!" />
-      </div>
+      {data.why.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Why</Label>
+          <Bullets items={data.why} marker="+" />
+        </div>
+      ) : null}
+      {data.caveats.length > 0 ? (
+        <div className="space-y-2">
+          <Label>Conditions</Label>
+          <Bullets items={data.caveats} marker="!" />
+        </div>
+      ) : null}
       <TwoUp
         leftLabel="Best suited for"
         rightLabel="Avoid if"

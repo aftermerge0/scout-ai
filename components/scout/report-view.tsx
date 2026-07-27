@@ -15,7 +15,7 @@ import type { AnySection, Evaluation } from "@/types/scout-api"
 
 import { EvidenceChip, EvidenceProvider } from "./evidence"
 import { Findings } from "./findings"
-import { Bullets, Label } from "./primitives"
+import { Label } from "./primitives"
 import { ProgressRail, ReportHeader } from "./report-header"
 import { SectionCard } from "./section-card"
 import { SectionNav } from "./section-nav"
@@ -139,23 +139,9 @@ function Headline({ evaluation }: { evaluation: Evaluation }) {
   if (!summary.headline) return null
 
   return (
-    <div className="space-y-5">
-      <p className="max-w-3xl text-xl leading-snug text-balance">
-        {summary.headline}
-      </p>
-      {summary.bestSuitedFor.length > 0 || summary.avoidIf.length > 0 ? (
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Best suited for</Label>
-            <Bullets items={summary.bestSuitedFor} marker="+" />
-          </div>
-          <div className="space-y-2">
-            <Label>Avoid if</Label>
-            <Bullets items={summary.avoidIf} marker="−" />
-          </div>
-        </div>
-      ) : null}
-    </div>
+    <p className="max-w-3xl text-xl leading-snug text-balance">
+      {summary.headline}
+    </p>
   )
 }
 

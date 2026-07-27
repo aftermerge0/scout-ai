@@ -16,6 +16,7 @@ import {
 } from "@/lib/agents/run-section-agent"
 import { collectExternalSources } from "@/lib/collectors/external"
 import { collectOfficialSources } from "@/lib/collectors/official"
+import { enrichReviewSources } from "@/lib/collectors/reviews"
 import { resolveEntityLive } from "@/lib/collectors/entity"
 import * as repo from "@/lib/evaluations/repository"
 
@@ -56,15 +57,20 @@ export async function runEvaluationPipeline({
     const resolved = await resolveEntityLive(input)
     await repo.setEntity(evaluationId, resolved)
 
-    // --- Collect (official + external in parallel) -------------------------
+    // --- Collect (official + external in parallel; deepen review pages) ----
     await repo.setPhase(evaluationId, "collecting_official")
-    const [officialPages, externalResults] = await Promise.all([
+    const [officialPages, externalRaw] = await Promise.all([
       resolved.normalizedUrl
         ? collectOfficialSources(resolved.normalizedUrl)
         : Promise.resolve([]),
-      collectExternalSources(resolved.companyName),
+      collectExternalSources(resolved.companyName, resolved.domain),
     ])
     await repo.setPhase(evaluationId, "collecting_external")
+    const externalResults = await enrichReviewSources(
+      externalRaw,
+      resolved.companyName,
+      resolved.domain
+    )
 
     if (officialPages.length > 0) {
       await repo.addEvidence(

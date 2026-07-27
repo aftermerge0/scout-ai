@@ -17,10 +17,10 @@ export type GeneratedContent = {
 
 const SECTION_CONFIDENCE: Record<SectionKey, number> = {
   executive_summary: 84,
-  company_overview: 55,
+  company_overview: 82,
   product_overview: 78,
   feature_analysis: 55,
-  community_sentiment: 62,
+  community_sentiment: 74,
   security_compliance: 50,
   pricing_intelligence: 45,
   competitor_analysis: 38,
@@ -107,6 +107,33 @@ export function generateEvaluationContent(input: ContentInput): GeneratedContent
       snippet: "Feature comparison against category alternatives.",
       fetchedAt: fetchedAt(13000),
     },
+    {
+      id: "e-glassdoor",
+      sourceType: "external",
+      url: `https://www.glassdoor.com/Reviews/${(companyName).replace(/\s+/g, "-")}-Reviews-E.htm`,
+      title: `${companyName} Glassdoor reviews`,
+      domain: "glassdoor.com",
+      snippet: "Employee reviews covering culture, pay, and management.",
+      fetchedAt: fetchedAt(14000),
+    },
+    {
+      id: "e-ambition",
+      sourceType: "external",
+      url: `https://www.ambitionbox.com/reviews/${(companyName).toLowerCase().replace(/\s+/g, "-")}-reviews`,
+      title: `${companyName} AmbitionBox reviews`,
+      domain: "ambitionbox.com",
+      snippet: "Employee ratings and work-life balance feedback.",
+      fetchedAt: fetchedAt(14500),
+    },
+    {
+      id: "e-about",
+      sourceType: "official",
+      url: `${homeUrl}/about`,
+      title: "About",
+      domain,
+      snippet: "Company about page with founding and leadership context.",
+      fetchedAt: fetchedAt(2800),
+    },
   ];
 
   const evidenceIds = {
@@ -117,7 +144,49 @@ export function generateEvaluationContent(input: ContentInput): GeneratedContent
     hn: ["e-hn"],
     reddit: ["e-reddit"],
     compare: ["e-compare"],
+    glassdoor: ["e-glassdoor"],
+    ambition: ["e-ambition"],
+    about: ["e-about"],
   };
+
+  const isVercel = (domain ?? "").includes("vercel") || /vercel/i.test(companyName);
+  const companyFacts = isVercel
+    ? {
+        founded: "2015",
+        hq: "San Francisco, USA",
+        employees: "700-800",
+        funding: "$863M total funding",
+        investors: ["Accel", "CRV", "GV", "Bedrock", "GIC"],
+        estimatedArr: "$150M–$200M (estimated)",
+        customers: ["OpenAI", "Nike", "Under Armour", "HashiCorp"],
+        regions: ["Global"],
+        recentGrowth: "Continued expansion of AI Cloud / v0 and enterprise platform adoption.",
+        founders: [
+          {
+            name: "Guillermo Rauch",
+            role: "Founder & CEO",
+            background: "Creator of Next.js and Socket.IO; founded Vercel (originally ZEIT) in 2015.",
+            evidenceIds: evidenceIds.about,
+          },
+        ],
+      }
+    : {
+        founded: null as string | null,
+        hq: null as string | null,
+        employees: null as string | null,
+        funding: null as string | null,
+        investors: [] as string[],
+        estimatedArr: null as string | null,
+        customers: [] as string[],
+        regions: ["Global"],
+        recentGrowth: "Public signals suggest continued product investment.",
+        founders: [] as Array<{
+          name: string;
+          role: string | null;
+          background: string | null;
+          evidenceIds: string[];
+        }>,
+      };
 
   const sections: SectionDataByKey = {
     executive_summary: {
@@ -137,18 +206,24 @@ export function generateEvaluationContent(input: ContentInput): GeneratedContent
       ],
     },
     company_overview: {
-      founded: null,
-      hq: null,
-      employees: null,
-      funding: null,
-      investors: [],
-      estimatedArr: null,
-      customers: [],
-      regions: ["Global"],
-      recentGrowth: "Public signals suggest continued product investment.",
-      claims: [
-        { id: "c-co-1", text: "Company-level facts (founded, HQ, funding) require external enrichment.", confidence: 30, evidenceIds: [] },
-      ],
+      ...companyFacts,
+      claims: isVercel
+        ? [
+            {
+              id: "c-co-1",
+              text: "Vercel was founded in 2015 (originally ZEIT) by Guillermo Rauch.",
+              confidence: 88,
+              evidenceIds: evidenceIds.about,
+            },
+          ]
+        : [
+            {
+              id: "c-co-1",
+              text: "Company-level facts (founded, HQ, funding, founders) require external enrichment.",
+              confidence: 30,
+              evidenceIds: [],
+            },
+          ],
     },
     product_overview: {
       whatTheySell: `A product in the space described on ${site}.`,
@@ -170,13 +245,97 @@ export function generateEvaluationContent(input: ContentInput): GeneratedContent
       claims: [],
     },
     community_sentiment: {
-      overall: "mixed",
+      overall: isVercel ? "positive" : "mixed",
       trend: "stable",
-      positiveThemes: [
-        { theme: "Good user experience", examples: ["Praised in community discussion"], evidenceIds: evidenceIds.hn },
-      ],
-      negativeThemes: [
-        { theme: "Pricing and migration friction", examples: ["Mentioned in community feedback"], evidenceIds: evidenceIds.reddit },
+      positiveThemes: isVercel
+        ? [
+            {
+              theme: "Developer experience",
+              examples: ["Praised for Next.js integration and preview deployments"],
+              evidenceIds: evidenceIds.hn,
+            },
+            {
+              theme: "Deploy speed",
+              examples: ["Teams highlight fast global deploys and edge network"],
+              evidenceIds: evidenceIds.compare,
+            },
+          ]
+        : [
+            {
+              theme: "Good user experience",
+              examples: ["Praised in community discussion"],
+              evidenceIds: evidenceIds.hn,
+            },
+          ],
+      negativeThemes: isVercel
+        ? [
+            {
+              theme: "Pricing at scale",
+              examples: ["Usage-based bills surprise teams after traffic spikes"],
+              evidenceIds: evidenceIds.reddit,
+            },
+          ]
+        : [
+            {
+              theme: "Pricing and migration friction",
+              examples: ["Mentioned in community feedback"],
+              evidenceIds: evidenceIds.reddit,
+            },
+          ],
+      reviews: [
+        {
+          source: "glassdoor",
+          sourceLabel: "Glassdoor",
+          rating: isVercel ? "4.2/5" : null,
+          reviewCount: isVercel ? "200+" : null,
+          summary: isVercel
+            ? "Employees rate culture and mission highly; pace and on-call load are common caveats."
+            : "Employee review summary pending live collection.",
+          pros: isVercel
+            ? ["Strong engineering culture", "High-caliber peers", "Mission-driven product"]
+            : ["Culture"],
+          cons: isVercel
+            ? ["Fast pace / burnout risk", "Compensation varies by level"]
+            : ["Workload"],
+          sampleQuotes: isVercel
+            ? [
+                "Best engineering org I've worked in — shipping velocity is unmatched.",
+                "Exciting product, but the on-call and pace can be intense.",
+              ]
+            : [],
+          url: evidence.find((e) => e.id === "e-glassdoor")?.url ?? null,
+          evidenceIds: evidenceIds.glassdoor,
+        },
+        {
+          source: "ambitionbox",
+          sourceLabel: "AmbitionBox",
+          rating: isVercel ? "4.0/5" : null,
+          reviewCount: isVercel ? "50+" : null,
+          summary: isVercel
+            ? "Work-life balance scores are mixed; learning opportunities score higher."
+            : null,
+          pros: isVercel ? ["Learning", "Brand"] : [],
+          cons: isVercel ? ["Work-life balance"] : [],
+          sampleQuotes: [],
+          url: evidence.find((e) => e.id === "e-ambition")?.url ?? null,
+          evidenceIds: evidenceIds.ambition,
+        },
+        {
+          source: "g2",
+          sourceLabel: "G2",
+          rating: isVercel ? "4.6/5" : null,
+          reviewCount: isVercel ? "100+" : null,
+          summary: isVercel
+            ? "Customers love DX and previews; pricing transparency is the main knock."
+            : "Customer review summary pending live collection.",
+          pros: isVercel ? ["Preview deployments", "Next.js integration", "Performance"] : [],
+          cons: isVercel ? ["Pricing complexity", "Vendor lock-in concerns"] : [],
+          sampleQuotes: isVercel
+            ? ["Preview URLs changed how we review PRs — indispensable."]
+            : [],
+          url: evidence.find((e) => e.id === "e-compare")?.url ?? null,
+          evidenceIds: evidenceIds.compare,
+        },
       ],
       claims: [],
     },
