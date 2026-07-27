@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { EvaluationContext, SectionData, SectionDataByKey, SectionKey } from "@/lib/api-types";
 import { getAzureModel } from "@/lib/azure-openai";
-import { BASE_SYSTEM_PROMPT, SECTION_GUIDANCE } from "@/lib/agents/prompts";
+import { BASE_SYSTEM_PROMPT, buildSectionUserPrompt } from "@/lib/agents/prompts";
 import { SECTION_SCHEMAS } from "@/lib/agents/schemas";
 
 export type AgentEvidence = {
@@ -58,33 +58,23 @@ export async function runSectionAgent<K extends SectionKey>(params: {
     data: sectionSchema,
   });
 
-  const contextLine = context
-    ? `Buyer context: ${[
-        context.useCase ? `use case = ${context.useCase}` : null,
-        context.companySize ? `company size = ${context.companySize}` : null,
-        context.priorities?.length ? `priorities = ${context.priorities.join(", ")}` : null,
-      ]
-        .filter(Boolean)
-        .join("; ")}`
-    : "Buyer context: none provided.";
-
   const priorSectionsBlock =
     priorSections && Object.keys(priorSections).length > 0
-      ? `\n\nAlready-completed analysis from other sections (use to synthesize, do not contradict without reason):\n${Object.entries(
+      ? `\n\n## Prior sections\nUse to synthesize where relevant; do not contradict without citing new evidence.\n${Object.entries(
           priorSections,
         )
           .map(([sectionKey, result]) => `[${sectionKey}] (confidence ${result?.confidence}): ${JSON.stringify(result?.data)}`)
           .join("\n")}`
       : "";
 
-  const prompt = `Company: ${companyName}${domain ? ` (${domain})` : ""}
-${contextLine}
-
-Section to produce: "${key}"
-Section guidance: ${SECTION_GUIDANCE[key]}
-
-Evidence (cite evidenceId values in your claims/evidenceIds fields; do not invent evidenceIds):
-${buildEvidenceBlock(evidence) || "(no evidence collected for this company)"}${priorSectionsBlock}`;
+  const prompt = buildSectionUserPrompt({
+    key,
+    companyName,
+    domain,
+    context,
+    evidenceBlock: buildEvidenceBlock(evidence),
+    priorSectionsBlock,
+  });
 
   const { object } = await generateObject({
     model: getAzureModel(),
