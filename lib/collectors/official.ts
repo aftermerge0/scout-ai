@@ -18,21 +18,21 @@ const PATH_WEIGHTS: Array<{ pattern: RegExp; weight: number }> = [
   { pattern: /\/security/i, weight: 10 },
   { pattern: /\/trust/i, weight: 9 },
   { pattern: /\/compliance/i, weight: 9 },
+  { pattern: /\/about|\/company|\/team|\/founders?/i, weight: 9 },
   { pattern: /\/docs?(\/|$)/i, weight: 8 },
   { pattern: /\/api(\/|$)/i, weight: 7 },
   { pattern: /\/status/i, weight: 6 },
   { pattern: /\/customers?|\/case-studies?/i, weight: 6 },
   { pattern: /\/integrations?/i, weight: 5 },
   { pattern: /\/changelog|\/release-notes/i, weight: 5 },
-  { pattern: /\/about/i, weight: 5 },
   { pattern: /\/enterprise/i, weight: 5 },
   { pattern: /\/blog/i, weight: 3 },
-  { pattern: /\/careers?/i, weight: 2 },
+  { pattern: /\/careers?/i, weight: 3 },
   { pattern: /\/legal|\/terms|\/privacy/i, weight: 1 },
 ];
 
 const MAX_PAGES_MAPPED = 100;
-const MAX_PAGES_SCRAPED = 8;
+const MAX_PAGES_SCRAPED = 10;
 const SCRAPE_TIMEOUT_MS = 20_000;
 
 function scorePath(url: string): number {

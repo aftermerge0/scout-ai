@@ -39,7 +39,7 @@ export const SECTION_TITLES: Record<SectionKey, string> = {
   company_overview: "Company Overview",
   product_overview: "Product Overview",
   feature_analysis: "Feature Analysis",
-  community_sentiment: "Community Sentiment",
+  community_sentiment: "Reviews & Sentiment",
   security_compliance: "Security & Compliance",
   pricing_intelligence: "Pricing Intelligence",
   competitor_analysis: "Competitor Analysis",
@@ -120,6 +120,13 @@ export type ExecutiveSummaryData = {
   claims: Claim[];
 };
 
+export type FounderProfile = {
+  name: string;
+  role: string | null;
+  background: string | null;
+  evidenceIds: string[];
+};
+
 export type CompanyOverviewData = {
   founded: string | null;
   hq: string | null;
@@ -130,6 +137,8 @@ export type CompanyOverviewData = {
   customers: string[];
   regions: string[];
   recentGrowth: string | null;
+  /** Founders / co-founders / CEO when named in evidence. */
+  founders: FounderProfile[];
   claims: Claim[];
 };
 
@@ -155,11 +164,35 @@ export type FeatureAnalysisData = {
   claims: Claim[];
 };
 
+export type ReviewSource =
+  | "glassdoor"
+  | "ambitionbox"
+  | "g2"
+  | "capterra"
+  | "linkedin"
+  | "trustpilot"
+  | "other";
+
+export type ReviewSourceSummary = {
+  source: ReviewSource;
+  sourceLabel: string;
+  rating: string | null;
+  reviewCount: string | null;
+  summary: string | null;
+  pros: string[];
+  cons: string[];
+  sampleQuotes: string[];
+  url: string | null;
+  evidenceIds: string[];
+};
+
 export type CommunitySentimentData = {
   overall: SentimentLabel;
   trend: "improving" | "stable" | "worsening" | "unknown";
   positiveThemes: Array<{ theme: string; examples: string[]; evidenceIds: string[] }>;
   negativeThemes: Array<{ theme: string; examples: string[]; evidenceIds: string[] }>;
+  /** Aggregated employee/customer reviews from Glassdoor, AmbitionBox, G2, etc. */
+  reviews: ReviewSourceSummary[];
   claims: Claim[];
 };
 

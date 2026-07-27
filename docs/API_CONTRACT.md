@@ -440,6 +440,13 @@ type ExecutiveSummaryData = {
 ### `company_overview`
 
 ```ts
+type FounderProfile = {
+  name: string;
+  role: string | null;
+  background: string | null;
+  evidenceIds: string[];
+};
+
 type CompanyOverviewData = {
   founded: string | null;       // year or date string
   hq: string | null;
@@ -450,6 +457,7 @@ type CompanyOverviewData = {
   customers: string[];
   regions: string[];
   recentGrowth: string | null;
+  founders: FounderProfile[];   // founders / CEO named in evidence
   claims: Claim[];
 };
 ```
@@ -485,11 +493,34 @@ type FeatureAnalysisData = {
 ### `community_sentiment`
 
 ```ts
+type ReviewSource =
+  | "glassdoor"
+  | "ambitionbox"
+  | "g2"
+  | "capterra"
+  | "linkedin"
+  | "trustpilot"
+  | "other";
+
+type ReviewSourceSummary = {
+  source: ReviewSource;
+  sourceLabel: string;
+  rating: string | null;
+  reviewCount: string | null;
+  summary: string | null;
+  pros: string[];
+  cons: string[];
+  sampleQuotes: string[];
+  url: string | null;
+  evidenceIds: string[];
+};
+
 type CommunitySentimentData = {
   overall: SentimentLabel;
   trend: "improving" | "stable" | "worsening" | "unknown";
   positiveThemes: Array<{ theme: string; examples: string[]; evidenceIds: string[] }>;
   negativeThemes: Array<{ theme: string; examples: string[]; evidenceIds: string[] }>;
+  reviews: ReviewSourceSummary[]; // Glassdoor / AmbitionBox / G2 / etc.
   claims: Claim[];
 };
 ```
