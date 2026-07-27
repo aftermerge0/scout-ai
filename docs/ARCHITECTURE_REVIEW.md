@@ -4,13 +4,14 @@
 implementation — could be traded for a *deep* one. Each was checked against the deletion test: *would removing
 this concentrate complexity, or just move it?*
 
-Date: 2026-07-27 · Reviewed at commit `14bbb31` (branch `main`)
+Date: 2026-07-27 · Reviewed at commit `14bbb31` (branch `main`) · **Decision update:** persistence is
+**Drizzle** (not Prisma). API contracts are **Zod**, with row-level schemas derived via `drizzle-orm/zod`.
 
 | | |
 |---|---|
 | Test files in repo | **0** |
 | Hand-mirrored copies of the contract | **5** |
-| Parallel pipelines / ORMs | **2** / **2** |
+| Parallel pipelines / ORMs | **2** / **2** (target: **1** ORM — Drizzle) |
 | Lines under `lib/` | **~2.9k** |
 
 > **No `CONTEXT.md` and no `docs/adr/` in this repo.** Domain vocabulary below is lifted from the code and
@@ -66,16 +67,16 @@ produces the *same* DTO by a different route. That fork is the spine of candidat
 
 | # | Candidate | Strength |
 |---|---|---|
-| 01 | [One Contract module, five hand-kept copies](#01--one-contract-module-five-hand-kept-copies) | **Strong** |
+| 01 | [One Contract module (Zod + drizzle-orm/zod)](#01--one-contract-module-zod--drizzle-ormzod) | **Strong** |
 | 02 | [The `isLiveMode()` fork wants to be a seam](#02--the-islivemode-fork-wants-to-be-a-seam) | **Strong** |
 | 03 | [The pipeline's decisions are welded to its writes](#03--the-pipelines-decisions-are-welded-to-its-writes) | **Strong** |
 | 04 | [Evidence collection is three shallow layers deep](#04--evidence-collection-is-three-shallow-layers-deep) | Worth exploring |
-| 05 | [Two ORMs, one of them dead](#05--two-orms-one-of-them-dead) | **Strong** |
+| 05 | [Two ORMs → keep Drizzle, delete Prisma](#05--two-orms--keep-drizzle-delete-prisma) | **Strong** |
 | 06 | [Config is a module-load side effect](#06--config-is-a-module-load-side-effect) | Worth exploring |
 
 ---
 
-## 01 · One Contract module, five hand-kept copies
+## 01 · One Contract module (Zod + drizzle-orm/zod)
 
 **Strength: Strong**
 
@@ -87,7 +88,41 @@ produces the *same* DTO by a different route. That fork is the spine of candidat
 | `lib/api-types.ts` | 375 ln — backend TS |
 | `types/scout-api.ts` | 419 ln — frontend TS |
 | `lib/agents/schemas.ts` | 234 ln — Zod |
-| `prisma/schema.prisma` | Json columns |
+| `lib/db/schema.ts` | Drizzle tables (target) · was `prisma/schema.prisma` |
+
+### Can we generate API contracts from Zod + Drizzle?
+
+**Yes — with a clear split of responsibilities.**
+
+On Drizzle ORM 1.x (`drizzle-orm@rc` already in this repo), Zod helpers live in-core at
+`drizzle-orm/zod`:
+
+| Helper | Role |
+|---|---|
+| `createSelectSchema(table)` | Zod for a selected row — response / boundary validation |
+| `createInsertSchema(table)` | Zod for inserts — request / write validation |
+| `createUpdateSchema(table)` | Zod for partial updates |
+| `createSchemaFactory({ zodInstance, coerce })` | Wire Zod 4, OpenAPI extensions, date coercion |
+
+That gives **row-level** contracts for free from `lib/db/schema.ts`. It does *not* replace the HTTP/LLM
+surface by itself: `EvaluationDto` is a *projection* (progress, etag, nested sections, ISO dates, omitted
+`markdown`) — not a 1:1 table dump. So:
+
+```
+lib/db/schema.ts          ← Drizzle tables (persistence)
+       │
+       ▼ drizzle-orm/zod
+lib/contract/db.ts        ← row Zod (select/insert/update), refined enums/json
+       │
+       ▼ compose / pick / omit / transform
+lib/contract/api.ts       ← EvaluationDto, EvidenceItem, section payloads (API + agents)
+       │
+       ▼ z.infer
+   FE + BE + generateObject schemas   ← one TypeScript surface
+```
+
+Hand-written Zod remains for section `data` payloads and DTO wrappers; Drizzle-derived Zod covers columns,
+nullability, and insert/update shapes so the DB and the contract cannot silently diverge on shared fields.
 
 ### Problem
 
@@ -103,20 +138,24 @@ report can serve two different confidence numbers for the same section, and no t
 
 ### Solution
 
-One **Contract module** under `lib/contract/`. Zod schemas are the single artefact; every TypeScript type is
-`z.infer`'d from them. The Section Agents pass those exact schemas to `generateObject` — they already almost
-do. The frontend imports the same inferred types. `types/scout-api.ts` is deleted; `API_CONTRACT.md` becomes
-generated or narrative-only, not normative.
+One **Contract module** under `lib/contract/`:
+
+1. Drizzle tables in `lib/db/schema.ts` are the persistence source of truth.
+2. `drizzle-orm/zod` derives row schemas; refine enums (`status`, `phase`, `sourceType`) and typed `json()`
+   columns against the API Zod types.
+3. API / agent Zod schemas compose those rows into DTOs (`EvaluationDto`, `EvidenceItem`, section data).
+4. Every TypeScript type is `z.infer`'d. Section Agents pass the exact section schemas to `generateObject`.
+5. Delete `types/scout-api.ts` and eventually `lib/api-types.ts`. `API_CONTRACT.md` becomes generated or
+   narrative-only, not normative.
 
 ### Benefits
 
-- **Leverage:** adding a field to a Report Section is one edit that simultaneously changes the LLM's output
-  schema, the API response type, and the frontend renderer's prop type. Today it is four edits and a doc.
-- **Locality:** the answer to "what shape is `pricing_intelligence`?" lives in exactly one file — for humans
-  and for any agent navigating the repo.
-- **Test surface:** contract conformance becomes a *runtime* check, not a hope. `Schema.parse(dto)` in one
-  test covers every route response, and the redundant `confidence`/`verdict` fields get resolved rather than
-  papered over.
+- **Leverage:** adding a field that exists in both DB and API is one Drizzle column + one refine; DTO and
+  agent schemas that compose it update together. Pure API-only fields stay in the Zod DTO layer only.
+- **Locality:** "what shape is `pricing_intelligence`?" and "what columns does `evidence` have?" each have
+  one answer.
+- **Test surface:** `Schema.parse(dto)` covers route responses; `createInsertSchema` covers repository
+  writes. Redundant `confidence`/`verdict` fields get resolved rather than papered over.
 
 ### Before / After
 
@@ -132,21 +171,24 @@ generated or narrative-only, not normative.
       no arrow between them is checked by anything
 ```
 
-**After — 1 deep module**
+**After — Drizzle + Zod, one deep module**
 
 ```
-                  lib/contract/  ← Zod schemas
+              lib/db/schema.ts  ← Drizzle
+                       │
+                       ▼ drizzle-orm/zod
+              lib/contract/     ← Zod (rows + DTOs + agents)
                        │
               ┌── z.infer · derived ──┐
               ▼        ▼         ▼         ▼
          API types  FE types  agent schema  runtime parse
       ──────────────────────────────────────────────────────
-      every arrow is the compiler's job
+      every arrow is the compiler's (and Zod's) job
 ```
 
 ### Deletion test
 
-Delete `types/scout-api.ts` → every frontend consumer must reach for the backend contract. Complexity
+Delete `types/scout-api.ts` → every frontend consumer must reach for the shared contract. Complexity
 **concentrates**. That is the signal.
 
 ---
@@ -186,7 +228,7 @@ been given an interface.
 ### Solution
 
 Name the seam **EvaluationStore**: create, read one, find recent by domain, plus the pipeline's write
-operations. Both existing modules become adapters behind it (in-memory, Prisma). Every store returns one
+operations. Both existing modules become adapters behind it (in-memory, **Drizzle**). Every store returns one
 **EvaluationSnapshot** — the full *Evaluation* + Report Sections + Evidence + Findings — and there is exactly
 *one* `toEvaluationDto(snapshot)`. Mode selection happens once, at module init, not three times in three
 handlers.
@@ -227,7 +269,7 @@ flowchart TD
   R2["GET route"] --> ST
   R3["evidence route"] --> ST
   ST --- A1["memory adapter"]
-  ST --- A2["prisma adapter"]
+  ST --- A2["drizzle adapter"]
   ST --> SN["EvaluationSnapshot"]
   SN --> ONE["toEvaluationDto()"]
   ONE --> DTO["EvaluationDto<br/>one rule set"]
@@ -402,24 +444,35 @@ Delete `lib/exa.ts` and `lib/firecrawl.ts` → client construction lands inside 
 
 ---
 
-## 05 · Two ORMs, one of them dead
+## 05 · Two ORMs → keep Drizzle, delete Prisma
 
 **Strength: Strong**
 
+### Decision
+
+**Keep Drizzle. Delete Prisma.** The spike Drizzle tree (`lib/db/`, `drizzle.config.ts`) becomes the real
+persistence path. Prisma (`lib/db.ts`, `prisma/`, `@prisma/*`) is removed after the Evaluation model is
+ported to `lib/db/schema.ts`.
+
+This flips the original "Prisma is live / Drizzle is dead" inventory: we migrate the live model onto the
+ORM we are keeping, then subtract Prisma entirely.
+
 ### Files
 
-| File | |
+| File | Action |
 |---|---|
-| `lib/db.ts` | Prisma — used |
-| `lib/db/index.ts` | Neon + Drizzle — unused |
-| `lib/db/schema.ts` | `reports` table — no consumer |
-| `drizzle.config.ts` | + 4 `db:drizzle:*` scripts |
-| `lib/env.ts` | `:34-40` explains the overlap |
+| `lib/db/schema.ts` | Expand: `evaluations`, `evidence`, `report_sections`, `findings` (drop unused `reports` spike) |
+| `lib/db/index.ts` | Lazy `getDb()` singleton (Neon HTTP or `pg` — match deployment) |
+| `lib/db.ts` | **Delete** (Prisma client) |
+| `prisma/`, `prisma.config.ts` | **Delete** |
+| `lib/evaluations/repository.ts` | Rewrite against Drizzle queries |
+| `package.json` | Drop `@prisma/*` / `prisma`; promote `db:*` scripts to Drizzle |
+| `lib/env.ts` | Collapse duplicate `AZURE_*` pairs once only one consumer remains |
 
 ### Problem
 
-`lib/db.ts` and `lib/db/index.ts` are two different databases, one import path apart. Drizzle defines a
-`reports` table that no code reads or writes; Prisma defines
+`lib/db.ts` and `lib/db/index.ts` are two different databases, one import path apart. Drizzle defined a
+`reports` table that no code reads or writes; Prisma defined
 `Evaluation`/`ReportSection`/`Evidence`/`Finding`, which is the real model. `lib/env.ts` carries a comment
 block explaining the coexistence of two Azure variable sets for the same reason.
 
@@ -429,36 +482,40 @@ not a seam.
 
 ### Solution
 
-Pick one ORM and delete the other outright, along with its config, its npm scripts and its dependencies.
-Collapse the duplicate `AZURE_*` variable pairs to one set. Behind candidate 02's seam, whichever survives is
-the persistence adapter's private business anyway.
+1. Port the Prisma models into Drizzle `pgTable` definitions (same columns, indexes, FKs, unique on
+   `(evaluationId, key)` for sections).
+2. Point `drizzle.config.ts` at that schema; generate/push migrations with `drizzle-kit`.
+3. Rewrite `repository.ts` (and later the EvaluationStore drizzle adapter) to use Drizzle.
+4. Delete Prisma client, schema, config, deps, and the dual `db:drizzle:*` naming.
+5. Export a single entry: `@/lib/db` → `lib/db/index.ts` (or re-export), so there is one import path.
+
+Behind candidate 02's seam, Drizzle is the persistence adapter's private business.
 
 ### Benefits
 
 - **AI-navigability:** one answer to "where is persistence", with no near-miss import path.
-- **Leverage:** smaller dependency surface, three fewer packages, one less migration toolchain to keep
-  working.
-- **Test surface:** unchanged — this is pure subtraction. Cheapest item on the list.
+- **Contract bridge:** `drizzle-orm/zod` only works cleanly once Drizzle owns the tables (candidate 01).
+- **Leverage:** smaller dependency surface; one migration toolchain.
+- **Test surface:** unchanged for subtraction; improved once store seam + Vitest land.
 
 ### Before / After
 
 ```
 BEFORE                                AFTER
 ──────────────────────────            ──────────────────────
-@/lib/db        Prisma · Evaluation…  @/lib/db   one ORM
+@/lib/db        Prisma · Evaluation…  @/lib/db   Drizzle · Evaluation…
       ≠                               ──────────────────────
-@/lib/db/index  Drizzle · reports     — nothing else —
+@/lib/db/index  Drizzle · reports     drizzle-orm/zod → contract rows
 ──────────────────────────
-drizzle.config.ts
-4 npm scripts
-3 deps
-2× AZURE_* var sets
+prisma/*, prisma.config.ts
+@prisma/client + adapter
+dual AZURE_* var sets (until collapsed)
 ```
 
 ### Deletion test
 
-The purest case on the page: deleting the unused ORM moves complexity *nowhere*, because nothing depends on
-it. **Strictly subtracts.**
+Deleting Prisma after the port moves complexity *nowhere* for callers behind the store seam — and removes a
+second schema language. **Strictly subtracts** once the Drizzle port lands.
 
 ---
 
@@ -475,7 +532,7 @@ it. **Strictly subtracts.**
 ### Problem
 
 `lib/env.ts` validates and throws at *import* time, and it is imported transitively by nearly every backend
-module. Combined with four `globalThis.__scout*` singletons (Prisma client, rate-limit buckets, evaluation
+module. Combined with four `globalThis.__scout*` singletons (DB client, rate-limit buckets, evaluation
 store, env itself), importing almost anything in `lib/` commits you to a configured process.
 
 This is why the repo has **zero tests and no test runner** — not discipline, but that the modules are
@@ -505,7 +562,7 @@ flowchart LR
   T["any test file"] --> M["import lib/evaluations/*"]
   M --> E["lib/env.ts<br/>loadEnv() at module scope"]
   E -->|"unset vars"| X["throws before<br/>a single assertion"]
-  M --> G["globalThis.__scoutPrisma<br/>__scoutRateLimit<br/>__scoutEvaluationStore"]
+  M --> G["globalThis.__scoutDb<br/>__scoutRateLimit<br/>__scoutEvaluationStore"]
 ```
 
 **After — config crosses an interface**
@@ -529,35 +586,41 @@ step of candidate 02 or 03 rather than on its own.
 
 ## Top recommendation
 
-### Start with 02 — give the `isLiveMode()` fork a real seam
+### Start with 05 — Drizzle owns persistence — then 02
 
-It is the only candidate where the seam is **already proven**. The rule is *one adapter = hypothetical seam,
-two = real* — and there are literally two implementations of *Evaluation* persistence in the tree today, plus
-two DTO builders that have already drifted apart on percent, etag format and entity visibility. The seam isn't
-a bet about the future; it is a description of the present, missing only an interface.
+Candidate **05** is no longer a ten-minute delete: it is a short migration (port Prisma models → Drizzle,
+rewrite `repository.ts`, remove Prisma). It must go first so candidate 01's `drizzle-orm/zod` bridge and
+candidate 02's "drizzle adapter" have a single real ORM.
+
+Then **02** — give the `isLiveMode()` fork a real seam. It is the only candidate where the seam is **already
+proven**. The rule is *one adapter = hypothetical seam, two = real* — and there are literally two
+implementations of *Evaluation* persistence in the tree today, plus two DTO builders that have already
+drifted apart on percent, etag format and entity visibility.
 
 It also pays for the rest. Candidate 03 needs somewhere for pipeline events to land — that is the store.
 Candidate 04's stable Evidence ids need one owner of Evidence writes — that is the store. Candidate 06's
-payoff is tests, and the in-memory adapter *is* the test double, already written. Doing 02 first turns 03, 04
-and 06 from refactors-on-faith into verifiable ones.
+payoff is tests, and the in-memory adapter *is* the test double, already written.
 
-Sequence: **05** first as a ten-minute clearing (delete the dead ORM so "where is persistence" has one answer
-before you name the seam), then **02**, then **01** — the Contract module is highest-value overall but touches
-every file, so it goes in after the structure has settled and tests exist to catch the drift it is meant to
-prevent.
+Sequence: **05** (Drizzle migration + Prisma deletion) → **02** (EvaluationStore) → **01** (Contract module
+with Zod + `drizzle-orm/zod`) — the Contract module is highest-value overall but touches every file, so it
+goes in after the structure has settled. Scaffold `lib/contract/` early if it unblocks types, but finish the
+cutover after the store seam exists.
 
 ```mermaid
 flowchart TD
-  C5["05 · delete dead ORM<br/>pure subtraction"] --> C2["02 · EvaluationStore seam"]
+  C5["05 · Drizzle schema + delete Prisma"] --> C2["02 · EvaluationStore seam"]
   C6["06 · config as argument<br/>+ vitest"] --> C2
   C2 --> C3["03 · pipeline events"]
   C2 --> C4["04 · Evidence Collection"]
-  C3 --> C1["01 · Contract module"]
+  C5 --> C1["01 · Contract module<br/>Zod + drizzle-orm/zod"]
+  C2 --> C1
+  C3 --> C1
   C4 --> C1
 ```
 
-01 sits last not because it matters least — it is the highest-leverage change on the page — but because it is
-a whole-tree edit that wants a test surface underneath it.
+01 sits late in the cutover not because it matters least — it is the highest-leverage change on the page —
+but because finishing it is a whole-tree edit that wants a test surface underneath it. Deriving row Zod from
+Drizzle can start as soon as 05 lands.
 
 ---
 
@@ -566,12 +629,13 @@ a whole-tree edit that wants a test surface underneath it.
 Two of these are correctness issues, not just structure:
 
 1. **Evidence ids never resolve** (candidate 04). Section Agents are handed evidence ids `official-N` /
-   `external-N` and told to cite them in `claims[].evidenceIds`. The same evidence is stored with Prisma-minted
-   UUIDs. Any UI that looks up a Claim's evidence by id finds nothing.
+   `external-N` and told to cite them in `claims[].evidenceIds`. The same evidence is stored with
+   DB-minted UUIDs. Any UI that looks up a Claim's evidence by id finds nothing.
 2. **Two confidence numbers for one section** (candidate 01). `ExecutiveSummaryData.confidence` and
    `ReportSection.confidence` are independent fields fed from different places; `run-pipeline.ts:255-262`
    reads the wrapper's, the section `data` carries the agent's.
 
 ---
 
-*Vocabulary: module · interface · depth · seam · adapter · leverage · locality. No ADRs contradicted.*
+*Vocabulary: module · interface · depth · seam · adapter · leverage · locality. No ADRs contradicted.
+Persistence decision: Drizzle. Contract decision: Zod (+ drizzle-orm/zod for rows).*

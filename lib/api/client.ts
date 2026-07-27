@@ -7,10 +7,6 @@ import type {
   EvidenceSourceType,
 } from "@/types/scout-api"
 
-import { mockCreateEvaluation, mockGetEvaluation } from "./mocks"
-
-export const USE_MOCKS = process.env.NEXT_PUBLIC_USE_API_MOCKS === "true"
-
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? ""
 
 export class ScoutApiError extends Error {
@@ -44,8 +40,6 @@ export async function startEvaluation(
   input: string,
   context?: EvaluationContext
 ): Promise<CreatedEvaluation> {
-  if (USE_MOCKS) return mockCreateEvaluation(input)
-
   const res = await fetch(`${API_BASE}/api/v1/evaluations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -63,8 +57,6 @@ export async function getEvaluation(
   etag?: string | null,
   signal?: AbortSignal
 ): Promise<PollResult> {
-  if (USE_MOCKS) return mockGetEvaluation(id, etag)
-
   const res = await fetch(
     `${API_BASE}/api/v1/evaluations/${id}?includeEvidence=summary`,
     {
