@@ -160,7 +160,7 @@ export function createDrizzleEvaluationStore(): EvaluationStore {
       if (!snapshot) {
         throw new Error(`Created evaluation "${evaluation.id}" could not be read back.`);
       }
-      return { ...snapshot, shouldRunPipeline: true };
+      return snapshot;
     },
     get: getSnapshot,
     async findRecentByDomain(domain, sinceMs) {

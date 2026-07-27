@@ -11,8 +11,7 @@ Give it a company name, domain, or URL. It reads official sources and third-part
 | Framework       | Next.js 16 (App Router, Turbopack, React 19)             |
 | Styling         | Tailwind v4, shadcn/ui (`base-nova`), Base UI primitives |
 | AI              | Vercel AI SDK 7 + Azure OpenAI                           |
-| Jobs            | Inngest durable functions                                |
-| Database        | Neon Postgres                                            |
+| Database        | Neon Postgres + Drizzle                                  |
 | Runtime         | Vercel                                                   |
 | Package manager | Bun                                                      |
 
@@ -27,46 +26,26 @@ bun run dev
 
 The app runs at `http://localhost:3000`.
 
-### Two modes
+Evaluations persist to Postgres and run collectors + Azure section agents in the request's `after()` continuation. `GET /api/v1/health` reports which env vars are still missing.
 
-`SCOUT_API_MODE` decides what the API does behind the same contract:
-
-- **`stub`** (default) — deterministic in-memory pipeline. No keys, no database, no Inngest. A run walks queued → running → completed over ~35s with real sections, findings, and evidence. Use this for frontend work.
-- **`live`** — real collectors (Firecrawl, Exa), real Azure agents, persisted to Postgres, orchestrated by Inngest.
-
-`GET /api/v1/health` reports the current mode and, in live mode, exactly which env vars are still missing.
-
-### Running live
-
-```bash
-bun run inngest     # Inngest dev server, discovers /api/inngest
-bun run dev         # in another terminal
-```
-
-Live mode needs `DATABASE_URL`, `FIRECRAWL_API_KEY`, `EXA_API_KEY`, and the three `AZURE_OPENAI_*` vars. Without them the API still boots and `/api/v1/health` lists what's absent.
+You need `DATABASE_URL` for create/read. Collectors and section agents also need `FIRECRAWL_API_KEY`, `EXA_API_KEY`, and the three `AZURE_OPENAI_*` vars; without them the API boots and `/api/v1/health` lists what's absent.
 
 ### Environment
 
 | Variable                                                          | Needed for   | Purpose                                                                      |
 | ----------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------- |
-| `SCOUT_API_MODE`                                                  | always       | `stub` or `live`. Defaults to `stub`.                                        |
-| `DATABASE_URL`                                                    | live + db    | Neon Postgres connection string. Also read by Drizzle Kit database commands. |
-| `FIRECRAWL_API_KEY`                                               | live         | Official-source crawling                                                     |
-| `EXA_API_KEY`                                                     | live         | Third-party signal search                                                    |
-| `AZURE_OPENAI_API_KEY`                                            | live         | Section agents                                                               |
-| `AZURE_OPENAI_ENDPOINT`                                           | live         | Section agents                                                               |
-| `AZURE_OPENAI_DEPLOYMENT`                                         | live         | Deployment name, not the underlying model id                                 |
-| `AZURE_OPENAI_API_VERSION`                                        | live         | Optional; defaults inside `lib/azure-openai.ts`                              |
-| `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY`                       | production   | Unset locally; the dev server needs neither                                  |
+| `DATABASE_URL`                                                    | always       | Neon Postgres connection string. Also read by Drizzle Kit database commands. |
+| `FIRECRAWL_API_KEY`                                               | pipeline     | Official-source crawling                                                     |
+| `EXA_API_KEY`                                                     | pipeline     | Third-party signal search                                                    |
+| `AZURE_OPENAI_API_KEY`                                            | pipeline     | Section agents                                                               |
+| `AZURE_OPENAI_ENDPOINT`                                           | pipeline     | Section agents                                                               |
+| `AZURE_OPENAI_DEPLOYMENT`                                         | pipeline     | Deployment name, not the underlying model id                                 |
+| `AZURE_OPENAI_API_VERSION`                                        | optional     | Defaults inside `lib/azure-openai.ts`                                        |
+| `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY`                       | optional     | Reserved for durable jobs; unused by the current `after()` pipeline          |
 | `AZURE_RESOURCE_NAME` / `AZURE_API_KEY` / `AZURE_DEPLOYMENT_NAME` | optional     | Read by the AI SDK provider in `lib/ai.ts`, separate from the pipeline above |
-| `NEXT_PUBLIC_USE_API_MOCKS`                                       | optional     | `true` serves the frontend from fixtures and never calls the API             |
 | `NEXT_PUBLIC_API_BASE`                                            | optional     | Point the client at a different API origin                                   |
 | `SCOUT_RATE_LIMIT_PER_MINUTE`                                     | optional     | Defaults to 5                                                                |
 | `SCOUT_DEDUPE_WINDOW_HOURS`                                       | optional     | Defaults to 24                                                               |
-
-### Frontend without a backend
-
-Set `NEXT_PUBLIC_USE_API_MOCKS=true` and the client swaps in `lib/api/mocks.ts`, a scripted evaluation that runs queued → running → completed over ~19 seconds against the real polling path. Type `fail` or `partial` into the input to drive those terminal states.
 
 ## Layout
 
@@ -76,21 +55,17 @@ app/
   report/[id]/page.tsx        report, polled until terminal
   api/v1/evaluations/         POST create, GET poll, GET evidence
   api/v1/health/
-  api/inngest/                Inngest webhook - never call from the client
 components/
   scout/                      report + landing surface
   ui/                         shadcn/ui
   ai-elements/                prompt input, citations, sources, suggestions
-inngest/
-  client.ts
-  functions/evaluate-company.ts
 lib/
-  api/                        fetch client + mock layer
-  evaluations/                domain, validation, progress, DTO mapping, store
-  api-types.ts                shared contract types
-  ai.ts                       Azure provider
+  api/                        fetch client + landing specimen
+  contract/                   Zod API + drizzle-orm/zod row schemas
+  db/                         Drizzle schema + client
+  evaluations/                store seam, repository, pipeline, DTO mapping
 docs/
-  PRD.md, PLAN.md, API_CONTRACT.md, FE_HANDOFF.md, fixtures/
+  PRD.md, PLAN.md, API_CONTRACT.md, FE_HANDOFF.md, ARCHITECTURE_REVIEW.md
 types/
   scout-api.ts                frontend mirror of the API contract
 ```
@@ -127,15 +102,13 @@ bun run db:generate    # drizzle-kit generate
 bun run db:migrate     # drizzle-kit migrate
 bun run db:push        # drizzle-kit push
 bun run db:studio      # drizzle-kit studio
-
-bun run inngest        # local Inngest dev server
 ```
 
 ## Notes for contributors
 
-- **Drizzle is the database layer.** Tables live in `lib/db/schema.ts`; `lib/db/index.ts` exposes the lazy `getDb()` singleton used by live evaluation persistence.
-- **Drizzle migrations live in `drizzle/`.** Generate them intentionally with `bun run db:generate`; apply schema changes with `bun run db:push` or `bun run db:migrate`.
-- **`lib/evaluations/store.ts` is stub-mode only.** It is in-memory and does not survive cold starts, which is fine because live mode never touches it.
+- **Drizzle is the database layer.** Tables live in `lib/db/schema.ts`; `lib/db/index.ts` exposes the lazy `getDb()` singleton.
+- **EvaluationStore** (`lib/evaluations/store`) is the route seam; adapters write through Drizzle. Pipeline writes still call `repository.ts` directly until the event-stream refactor.
+- **Contracts** live under `lib/contract/` (Zod + `drizzle-orm/zod` row schemas). `lib/api-types.ts` re-exports them.
 - **Blank env vars count as unset.** `lib/env.ts` strips empty strings before validating, so placeholder lines in `.env` disable a capability rather than crashing the process.
 - **`components/ai-elements/` is pruned to what's imported.** Pulling a component back from the registry may reintroduce type errors against Base UI v1, and the build typechecks the whole repo.
 - **Motion is deliberate.** Shared easing tokens and the `.scout-enter` animation live in `app/globals.css`, and reduced motion is honored throughout. Streaming state animates; repeated navigation does not.

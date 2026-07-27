@@ -2,8 +2,6 @@ export type ResolvedEntity = {
   normalizedUrl: string | null;
   domain: string | null;
   companyName: string;
-  /** Dev/demo hook: inputs containing "fail" simulate a collection failure so FE can test error states. */
-  willFail: boolean;
 };
 
 function titleCaseFromSlug(slug: string): string {
@@ -21,7 +19,6 @@ function looksLikeBareDomain(value: string): boolean {
 
 export function resolveEntity(rawInput: string): ResolvedEntity {
   const trimmed = rawInput.trim();
-  const willFail = trimmed.toLowerCase().includes("fail");
 
   if (/^https?:\/\//i.test(trimmed)) {
     try {
@@ -31,7 +28,6 @@ export function resolveEntity(rawInput: string): ResolvedEntity {
         normalizedUrl: `${url.protocol}//${domain}`,
         domain,
         companyName: titleCaseFromSlug(domain.split(".")[0] ?? domain),
-        willFail,
       };
     } catch {
       // fall through to name-based handling below
@@ -44,7 +40,6 @@ export function resolveEntity(rawInput: string): ResolvedEntity {
       normalizedUrl: `https://${domain}`,
       domain,
       companyName: titleCaseFromSlug(domain.split(".")[0] ?? domain),
-      willFail,
     };
   }
 
@@ -52,6 +47,5 @@ export function resolveEntity(rawInput: string): ResolvedEntity {
     normalizedUrl: null,
     domain: null,
     companyName: trimmed,
-    willFail,
   };
 }

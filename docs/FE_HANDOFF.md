@@ -1,11 +1,11 @@
 # Frontend handoff — Scout
 
-You can start UI **now**. Backend will match this contract; no guessing.
+Backend `/api/v1` is live. Point the UI at the app origin (or `NEXT_PUBLIC_API_BASE`).
 
 ## Read these
 
 1. [`API_CONTRACT.md`](./API_CONTRACT.md) — full API + TypeScript shapes  
-2. [`fixtures/README.md`](./fixtures/README.md) — copy/paste mock JSON  
+2. [`fixtures/README.md`](./fixtures/README.md) — sample JSON for visual QA  
 
 ## What to build
 
@@ -36,30 +36,12 @@ You can start UI **now**. Backend will match this contract; no guessing.
 - `POST /api/v1/evaluations`
 - `GET /api/v1/evaluations/:id?includeEvidence=summary`
 - Optional: `GET /api/v1/evaluations/:id/evidence`
-
-Do **not** call `/api/inngest`.
-
-## Live stub API (recommended over mocks)
-
-The real `/api/v1` routes are implemented now (`bun run dev`, http://localhost:3000). They run a deterministic **simulated** pipeline (no real Firecrawl/Exa/Azure calls yet — see `lib/evaluations/`) but return the exact contract shape, so you can point the app straight at it instead of hand-written mocks:
-
-- Any `input` progresses through `queued → running → completed` over ~40s (fast on purpose for dev).
-- Any input containing `"fail"` (e.g. `"failcorp.example"`) simulates a `failed` evaluation after ~5s — use this to build the error state.
-- Company name / domain / evidence content is generated generically from your input, so it works for any string.
-
-## Local mocks (fallback if you want to work offline)
-
-```ts
-const USE_MOCKS = process.env.NEXT_PUBLIC_USE_API_MOCKS === "true";
-```
-
-Copy fixtures from `docs/fixtures/README.md` into your mock layer.  
-When stub/live API is up, point at the shared Vercel preview and set `USE_MOCKS=false`.
+- `GET /api/v1/health` — operational missing-config map
 
 ## Types
 
-Copy enums + section `data` types from API_CONTRACT §2 and §8 into e.g. `src/types/scout-api.ts`.  
-Backend will later publish the same shapes as `lib/api-types.ts`.
+Shared Zod contracts live in `lib/contract/` (re-exported via `lib/api-types.ts`).  
+Frontend mirror: `types/scout-api.ts`.
 
 ## Questions / contract changes
 

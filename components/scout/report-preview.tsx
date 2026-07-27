@@ -1,4 +1,4 @@
-import { sampleEvaluation } from "@/lib/api/mocks"
+import { sampleEvaluation } from "@/lib/api/specimen"
 import { cn } from "@/lib/utils"
 import type { RecommendationVerdict, SectionKey } from "@/types/scout-api"
 

@@ -17,7 +17,7 @@ export const maxDuration = 300;
 
 const evaluationStore = getEvaluationStore();
 
-/** Compares the requested context against a stored `contextJson` value for cache-hit eligibility. */
+/** Compares the requested context against a stored context for cache-hit eligibility. */
 function contextsMatch(a: EvaluationContext | null, b: EvaluationContext | null): boolean {
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
@@ -54,15 +54,13 @@ export async function POST(request: Request) {
       const evaluation = await evaluationStore.create(parsed.input, context);
       // Respond 201 now; the pipeline keeps running after the response and
       // reports progress by writing to the evaluation row.
-      if (evaluation.shouldRunPipeline) {
-        after(async () => {
-          await runEvaluationPipeline({
-            evaluationId: evaluation.id,
-            input: parsed.input,
-            context,
-          });
+      after(async () => {
+        await runEvaluationPipeline({
+          evaluationId: evaluation.id,
+          input: parsed.input,
+          context,
         });
-      }
+      });
       responseBody = toCreateEvaluationResponse(evaluation);
     }
 

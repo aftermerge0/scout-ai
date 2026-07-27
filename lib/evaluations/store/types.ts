@@ -65,14 +65,10 @@ export type EvaluationSnapshot = {
   confidence: number | null;
 };
 
-export type EvaluationCreateResult = EvaluationSnapshot & {
-  shouldRunPipeline: boolean;
-};
+export type EvaluationCreateResult = EvaluationSnapshot;
 
 export type EvaluationStore = {
   create(input: string, context: EvaluationContext | null): Promise<EvaluationCreateResult>;
   get(id: string): Promise<EvaluationSnapshot | null>;
   findRecentByDomain(domain: string, sinceMs: number): Promise<EvaluationSnapshot | null>;
 };
-
-export type EvaluationStoreMode = "memory" | "drizzle";
