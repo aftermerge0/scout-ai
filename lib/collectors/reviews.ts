@@ -98,6 +98,8 @@ export function expandCanonicalReviewUrls(
     if (!isReviewHost(item.url)) continue;
     if (!isOnTopicReviewResult(item, companyName, domain)) continue;
     const host = hostnameOf(item.url) ?? "";
+    // Prefer English product pages; skip localized G2 paths (/it/, /de/, …).
+    if (/g2\.com\/[a-z]{2}\//i.test(item.url)) continue;
 
     if (host.includes("ambitionbox.com") && /\/reviews\//i.test(item.url)) {
       add(item.url.split("?")[0]!);
