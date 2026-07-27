@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scout — Architecture Review</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: "dark",
+    themeVariables: {
+      background: "#0b0d10",
+      primaryColor: "#171b21",
+      primaryTextColor: "#e6e8eb",
+      primaryBorderColor: "#2b3138",
+      lineColor: "#6b7280",
+      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      fontSize: "13px",
+    },
+    flowchart: { curve: "basis", htmlLabels: true },
+  });
+</script>
+<style>
+  body { background:#0b0d10; color:#e6e8eb; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .card { background:#101318; border:1px solid #1e242c; }
+  .panel { background:#0d1015; border:1px solid #1c222a; }
+  .mermaid { background: transparent !important; }
+  .mermaid svg { max-width: 100%; height: auto; }
+  .scrollx { overflow-x: auto; }
+  .hair { border-color:#1e242c; }
+  /* mass diagram bricks */
+  .brick { border-radius:3px; }
+  .rule { background:repeating-linear-gradient(90deg,#2b3138 0 6px,transparent 6px 12px); height:1px; }
+</style>
+</head>
+<body class="antialiased">
+
+<div class="mx-auto max-w-6xl px-6 py-14">
+
+  <!-- ══════════ HEADER ══════════ -->
+  <header class="mb-16">
+    <div class="mono text-xs tracking-widest text-emerald-400/80 mb-3">ARCHITECTURE REVIEW · DEEPENING OPPORTUNITIES</div>
+    <h1 class="text-5xl font-semibold tracking-tight mb-4">scout-ai</h1>
+    <p class="text-lg text-zinc-400 max-w-3xl leading-relaxed">
+      Six candidates where a <strong class="text-zinc-200">shallow module</strong> — interface nearly as
+      complex as its implementation — could be traded for a <strong class="text-zinc-200">deep</strong> one.
+      Each was checked against the deletion test: <em>would removing this concentrate complexity, or just move it?</em>
+    </p>
+
+    <div class="mt-8 grid gap-3 sm:grid-cols-4">
+      <div class="panel rounded-lg p-4">
+        <div class="mono text-2xl text-zinc-100">0</div>
+        <div class="text-xs text-zinc-500 mt-1">test files in repo</div>
+      </div>
+      <div class="panel rounded-lg p-4">
+        <div class="mono text-2xl text-zinc-100">5</div>
+        <div class="text-xs text-zinc-500 mt-1">hand-mirrored copies of the contract</div>
+      </div>
+      <div class="panel rounded-lg p-4">
+        <div class="mono text-2xl text-zinc-100">2</div>
+        <div class="text-xs text-zinc-500 mt-1">parallel pipelines + 2 ORMs</div>
+      </div>
+      <div class="panel rounded-lg p-4">
+        <div class="mono text-2xl text-zinc-100">~2.9k</div>
+        <div class="text-xs text-zinc-500 mt-1">lines under <span class="mono">lib/</span></div>
+      </div>
+    </div>
+
+    <div class="mt-6 rounded-lg border border-amber-500/25 bg-amber-500/5 p-4 text-sm text-amber-200/90">
+      <strong>No <span class="mono">CONTEXT.md</span> and no <span class="mono">docs/adr/</span> in this repo.</strong>
+      Domain vocabulary below is lifted from the code and <span class="mono">docs/PRD.md</span> —
+      <em>Evaluation</em>, <em>Report Section</em>, <em>Evidence</em>, <em>Finding</em>, <em>Claim</em>,
+      <em>Entity Resolution</em>, <em>Collector</em>, <em>Section Agent</em>, <em>Phase</em>, <em>Verdict</em>.
+      No ADR constrains any candidate here, so nothing below is re-litigating a recorded decision.
+    </div>
+  </header>
+
+  <!-- ══════════ THE SHAPE OF THE SYSTEM ══════════ -->
+  <section class="mb-16">
+    <h2 class="text-sm mono tracking-widest text-zinc-500 mb-5">CURRENT SHAPE</h2>
+    <div class="card rounded-xl p-6 scrollx">
+<pre class="mermaid">
+flowchart LR
+  subgraph FE["Frontend"]
+    HOOK["use-evaluation.ts<br/>poll loop"] --> CLIENT["lib/api/client.ts"]
+    CLIENT -.-> MOCKS["lib/api/mocks.ts<br/>846 lines"]
+    SEC["components/scout/sections.tsx<br/>648 lines"]
+  end
+
+  subgraph RT["Route layer"]
+    POST["POST /evaluations"]
+    GET["GET /evaluations/:id"]
+    EV["GET /:id/evidence"]
+  end
+
+  CLIENT --> POST
+  CLIENT --> GET
+
+  POST --> FORK{{"isLiveMode()"}}
+  GET --> FORK2{{"isLiveMode()"}}
+  EV --> FORK3{{"isLiveMode()"}}
+
+  FORK --> STUB["store.ts<br/>generate-content.ts"]
+  FORK --> LIVE["repository.ts<br/>run-pipeline.ts"]
+  FORK2 --> TODTO["to-dto.ts"]
+  FORK2 --> DBDTO["db-to-dto.ts"]
+  FORK3 --> STUB
+  FORK3 --> LIVE
+
+  LIVE --> COL["collectors/*"]
+  LIVE --> AG["agents/run-section-agent.ts"]
+  COL --> FC["firecrawl.ts"]
+  COL --> EX["exa.ts"]
+  AG --> AZ["azure-openai.ts"]
+
+  style FORK fill:#3b1d1d,stroke:#7f1d1d
+  style FORK2 fill:#3b1d1d,stroke:#7f1d1d
+  style FORK3 fill:#3b1d1d,stroke:#7f1d1d
+</pre>
+    </div>
+    <p class="text-sm text-zinc-500 mt-4 leading-relaxed">
+      Three red diamonds. Every route re-decides which universe it is in, and each branch reaches a
+      <em>different</em> module that produces the <em>same</em> DTO by a different route. That fork is the
+      spine of candidates 1–3.
+    </p>
+  </section>
+
+  <!-- ══════════ LEGEND ══════════ -->
+  <section class="mb-12 flex flex-wrap gap-2 text-xs mono">
+    <span class="rounded-full bg-emerald-500/15 text-emerald-300 px-3 py-1 border border-emerald-500/30">Strong</span>
+    <span class="rounded-full bg-sky-500/15 text-sky-300 px-3 py-1 border border-sky-500/30">Worth exploring</span>
+    <span class="rounded-full bg-zinc-500/15 text-zinc-400 px-3 py-1 border border-zinc-500/30">Speculative</span>
+  </section>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- CANDIDATE 1                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <article class="card rounded-xl p-8 mb-10">
+    <div class="flex items-start justify-between gap-6 mb-6">
+      <div>
+        <div class="mono text-xs text-zinc-600 mb-2">CANDIDATE 01</div>
+        <h2 class="text-3xl font-semibold tracking-tight">One Contract module, five hand-kept copies</h2>
+      </div>
+      <span class="shrink-0 mono text-xs rounded-full bg-emerald-500/15 text-emerald-300 px-3 py-1.5 border border-emerald-500/30">Strong</span>
+    </div>
+
+    <div class="grid gap-8 lg:grid-cols-2">
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">FILES</h3>
+        <ul class="mono text-sm text-zinc-300 space-y-1 mb-6">
+          <li>docs/API_CONTRACT.md <span class="text-zinc-600">708 ln — prose</span></li>
+          <li>lib/api-types.ts <span class="text-zinc-600">375 ln — backend TS</span></li>
+          <li>types/scout-api.ts <span class="text-zinc-600">419 ln — frontend TS</span></li>
+          <li>lib/agents/schemas.ts <span class="text-zinc-600">234 ln — Zod</span></li>
+          <li>prisma/schema.prisma <span class="text-zinc-600">Json columns</span></li>
+        </ul>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">PROBLEM</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          The <em>Evaluation</em> contract is written out five times, in four languages, and nothing
+          checks that the copies agree. <span class="mono text-zinc-300">lib/api-types.ts</span> and
+          <span class="mono text-zinc-300">types/scout-api.ts</span> are near-identical files that never
+          import each other; the backend imports one, the frontend imports the other. The interface here is
+          <em>bigger</em> than what it protects — that is textbook shallowness.
+        </p>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          The drift is already live. <span class="mono text-zinc-300">ExecutiveSummaryData</span> carries
+          its own <span class="mono">confidence</span> and <span class="mono">verdict</span>, while
+          <span class="mono text-zinc-300">ReportSection.confidence</span> and
+          <span class="mono text-zinc-300">SummaryDto.verdict</span> carry them <em>again</em> as separate
+          columns. <span class="mono">run-pipeline.ts:255-262</span> picks the wrapper's confidence and the
+          <em>recommendation</em> section's verdict — so a report can serve two different confidence numbers
+          for the same section, and no type error is possible.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">SOLUTION</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          One <strong class="text-zinc-200">Contract module</strong> under <span class="mono">lib/contract/</span>.
+          Zod schemas are the single artefact; every TypeScript type is <span class="mono">z.infer</span>'d
+          from them. The Section Agents pass those exact schemas to
+          <span class="mono">generateObject</span> — they already almost do. The frontend imports the same
+          inferred types. <span class="mono">types/scout-api.ts</span> is deleted;
+          <span class="mono">API_CONTRACT.md</span> becomes generated or narrative-only, not normative.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">BENEFITS</h3>
+        <ul class="text-sm text-zinc-400 leading-relaxed space-y-2 list-disc pl-5">
+          <li><strong class="text-zinc-300">Leverage:</strong> adding a field to a Report Section is one edit
+            that simultaneously changes the LLM's output schema, the API response type, and the frontend
+            renderer's prop type. Today it is four edits and a doc.</li>
+          <li><strong class="text-zinc-300">Locality:</strong> the answer to "what shape is
+            <span class="mono">pricing_intelligence</span>?" lives in exactly one file — for humans and for
+            any agent navigating the repo.</li>
+          <li><strong class="text-zinc-300">Test surface:</strong> contract conformance becomes a
+            <em>runtime</em> check, not a hope. <span class="mono">Schema.parse(dto)</span> in one test
+            covers every route response, and the redundant <span class="mono">confidence</span>/<span class="mono">verdict</span>
+            fields get resolved rather than papered over.</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-3">BEFORE / AFTER</h3>
+        <div class="grid grid-cols-2 gap-4">
+          <!-- BEFORE -->
+          <div class="panel rounded-lg p-4">
+            <div class="mono text-[10px] text-red-400/80 mb-3 tracking-widest">BEFORE — 5 SOURCES OF TRUTH</div>
+            <div class="space-y-2">
+              <div class="brick bg-zinc-700/40 border border-zinc-600/40 px-2 py-2 text-[10px] mono">API_CONTRACT.md</div>
+              <div class="text-center text-red-400/60 text-[10px] mono">↓ copy by hand</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div class="brick bg-red-500/15 border border-red-500/30 px-2 py-2 text-[10px] mono">api-types.ts</div>
+                <div class="brick bg-red-500/15 border border-red-500/30 px-2 py-2 text-[10px] mono">scout-api.ts</div>
+                <div class="brick bg-red-500/15 border border-red-500/30 px-2 py-2 text-[10px] mono">schemas.ts</div>
+                <div class="brick bg-red-500/15 border border-red-500/30 px-2 py-2 text-[10px] mono">schema.prisma</div>
+              </div>
+              <div class="rule my-2"></div>
+              <div class="text-[10px] text-zinc-500 leading-snug">no arrow between them is checked by anything</div>
+            </div>
+          </div>
+          <!-- AFTER -->
+          <div class="panel rounded-lg p-4">
+            <div class="mono text-[10px] text-emerald-400/80 mb-3 tracking-widest">AFTER — 1 DEEP MODULE</div>
+            <div class="space-y-2">
+              <div class="brick bg-emerald-500/20 border border-emerald-500/40 px-2 py-4 text-[10px] mono text-center">
+                lib/contract/<br/><span class="text-emerald-300/70">Zod schemas</span>
+              </div>
+              <div class="text-center text-emerald-400/60 text-[10px] mono">↓ z.infer · derived</div>
+              <div class="grid grid-cols-2 gap-2">
+                <div class="brick bg-zinc-700/30 border border-zinc-600/30 px-2 py-1.5 text-[10px] mono text-zinc-400">API types</div>
+                <div class="brick bg-zinc-700/30 border border-zinc-600/30 px-2 py-1.5 text-[10px] mono text-zinc-400">FE types</div>
+                <div class="brick bg-zinc-700/30 border border-zinc-600/30 px-2 py-1.5 text-[10px] mono text-zinc-400">agent schema</div>
+                <div class="brick bg-zinc-700/30 border border-zinc-600/30 px-2 py-1.5 text-[10px] mono text-zinc-400">runtime parse</div>
+              </div>
+              <div class="rule my-2"></div>
+              <div class="text-[10px] text-emerald-300/60 leading-snug">every arrow is the compiler's job</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-5 panel rounded-lg p-4">
+          <div class="mono text-[10px] text-zinc-500 mb-2 tracking-widest">DELETION TEST</div>
+          <p class="text-sm text-zinc-400 leading-relaxed">
+            Delete <span class="mono text-zinc-300">types/scout-api.ts</span> → every frontend consumer must
+            reach for the backend contract. Complexity <strong class="text-emerald-400">concentrates</strong>.
+            That is the signal.
+          </p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- CANDIDATE 2                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <article class="card rounded-xl p-8 mb-10">
+    <div class="flex items-start justify-between gap-6 mb-6">
+      <div>
+        <div class="mono text-xs text-zinc-600 mb-2">CANDIDATE 02</div>
+        <h2 class="text-3xl font-semibold tracking-tight">The <span class="mono text-2xl">isLiveMode()</span> fork wants to be a seam</h2>
+      </div>
+      <span class="shrink-0 mono text-xs rounded-full bg-emerald-500/15 text-emerald-300 px-3 py-1.5 border border-emerald-500/30">Strong</span>
+    </div>
+
+    <div class="grid gap-8 lg:grid-cols-2">
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">FILES</h3>
+        <ul class="mono text-sm text-zinc-300 space-y-1 mb-6">
+          <li>app/api/v1/evaluations/route.ts <span class="text-zinc-600">:40, :45-91</span></li>
+          <li>app/api/v1/evaluations/[id]/route.ts <span class="text-zinc-600">:22-34</span></li>
+          <li>app/api/v1/evaluations/[id]/evidence/route.ts <span class="text-zinc-600">:23-43</span></li>
+          <li>lib/evaluations/store.ts &nbsp;·&nbsp; repository.ts</li>
+          <li>lib/evaluations/to-dto.ts &nbsp;·&nbsp; db-to-dto.ts</li>
+        </ul>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">PROBLEM</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          Two complete <em>Evaluation</em> implementations run side by side, and the choice between them is
+          re-made in every route handler. The route is where request parsing, rate limiting, dedupe,
+          persistence-mode selection, and DTO shaping all collide — so the route is shallow-and-fat at once.
+        </p>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          Worse, the two branches produce the same <span class="mono text-zinc-300">EvaluationDto</span> by
+          <em>different rules</em>. <span class="mono">to-dto.ts</span> lerps percent from elapsed time;
+          <span class="mono">db-to-dto.ts</span> uses a phase→percent lookup table. Etags differ in format
+          (<span class="mono">W/"status-percent-n"</span> vs <span class="mono">W/"timestamp-status-n"</span>).
+          <span class="mono">to-dto.ts</span> hides resolved entity fields until a phase threshold;
+          <span class="mono">db-to-dto.ts</span> never does. The frontend polling loop in
+          <span class="mono">use-evaluation.ts</span> is tuned against one of these and merely tolerated by
+          the other.
+        </p>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          There are already <strong class="text-zinc-200">two adapters</strong> here — so this is a
+          <em>real</em> seam, not a hypothetical one. It just hasn't been given an interface.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">SOLUTION</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          Name the seam <strong class="text-zinc-200">EvaluationStore</strong>: create, read one, find recent
+          by domain, plus the pipeline's write operations. Both existing modules become adapters behind it
+          (in-memory, Prisma). Every store returns one <strong class="text-zinc-200">EvaluationSnapshot</strong>
+          — the full <em>Evaluation</em> + Report Sections + Evidence + Findings — and there is exactly
+          <em>one</em> <span class="mono">toEvaluationDto(snapshot)</span>. Mode selection happens once, at
+          module init, not three times in three handlers.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">BENEFITS</h3>
+        <ul class="text-sm text-zinc-400 leading-relaxed space-y-2 list-disc pl-5">
+          <li><strong class="text-zinc-300">Locality:</strong> "how is <span class="mono">progress.percent</span>
+            computed?" has one answer instead of two that disagree.</li>
+          <li><strong class="text-zinc-300">Leverage:</strong> handlers shrink to parse → store → DTO. Adding a
+            third backend (Redis, Inngest-durable) costs one adapter, zero route edits.</li>
+          <li><strong class="text-zinc-300">Test surface:</strong> the in-memory adapter <em>becomes</em> the
+            test double you'd otherwise have to write. Route tests, DTO tests, and polling-contract tests all
+            run without Postgres — currently none of them can run at all.</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-3">BEFORE / AFTER</h3>
+        <div class="panel rounded-lg p-4 mb-4 scrollx">
+          <div class="mono text-[10px] text-red-400/80 mb-2 tracking-widest">BEFORE</div>
+<pre class="mermaid">
+flowchart TD
+  R1["POST route"] --> F1{isLiveMode}
+  R2["GET route"] --> F2{isLiveMode}
+  R3["evidence route"] --> F3{isLiveMode}
+  F1 --> S["store.ts"]
+  F1 --> P["repository.ts"]
+  F2 --> TD["to-dto.ts"]
+  F2 --> DD["db-to-dto.ts"]
+  F3 --> S
+  F3 --> P
+  TD --> DTO1["EvaluationDto<br/>rules A"]
+  DD --> DTO2["EvaluationDto<br/>rules B"]
+</pre>
+        </div>
+        <div class="panel rounded-lg p-4 scrollx">
+          <div class="mono text-[10px] text-emerald-400/80 mb-2 tracking-widest">AFTER</div>
+<pre class="mermaid">
+flowchart TD
+  R1["POST route"] --> ST["EvaluationStore<br/>(seam)"]
+  R2["GET route"] --> ST
+  R3["evidence route"] --> ST
+  ST --- A1["memory adapter"]
+  ST --- A2["prisma adapter"]
+  ST --> SN["EvaluationSnapshot"]
+  SN --> ONE["toEvaluationDto()"]
+  ONE --> DTO["EvaluationDto<br/>one rule set"]
+</pre>
+        </div>
+
+        <div class="mt-5 panel rounded-lg p-4">
+          <div class="mono text-[10px] text-zinc-500 mb-2 tracking-widest">DELETION TEST</div>
+          <p class="text-sm text-zinc-400 leading-relaxed">
+            Delete <span class="mono text-zinc-300">db-to-dto.ts</span> → all DTO shaping must land in one
+            module that both adapters feed. <strong class="text-emerald-400">Concentrates.</strong>
+            Delete the <span class="mono">isLiveMode()</span> branches from routes → the decision has to
+            move somewhere, and there is only one sensible somewhere.
+          </p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- CANDIDATE 3                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <article class="card rounded-xl p-8 mb-10">
+    <div class="flex items-start justify-between gap-6 mb-6">
+      <div>
+        <div class="mono text-xs text-zinc-600 mb-2">CANDIDATE 03</div>
+        <h2 class="text-3xl font-semibold tracking-tight">The pipeline's decisions are welded to its writes</h2>
+      </div>
+      <span class="shrink-0 mono text-xs rounded-full bg-emerald-500/15 text-emerald-300 px-3 py-1.5 border border-emerald-500/30">Strong</span>
+    </div>
+
+    <div class="grid gap-8 lg:grid-cols-2">
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">FILES</h3>
+        <ul class="mono text-sm text-zinc-300 space-y-1 mb-6">
+          <li>lib/evaluations/run-pipeline.ts <span class="text-zinc-600">288 ln, 14 repo.* calls</span></li>
+          <li>lib/evaluations/repository.ts</li>
+          <li>lib/agents/findings.ts</li>
+        </ul>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">PROBLEM</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          <span class="mono text-zinc-300">runEvaluationPipeline</span> interleaves every domain decision with
+          an <span class="mono">await repo.*</span>. The interesting logic is precisely the interleaving:
+          <em>which failures degrade a report to</em> <span class="mono">partial</span> <em>vs</em>
+          <span class="mono">failed</span>; whether a missing Executive Summary should still write a
+          <span class="mono">summaryJson</span>; that a zero-Evidence run must terminate rather than feed
+          empty prompts to eleven Section Agents.
+        </p>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          None of that is reachable without a live Postgres, a Firecrawl key, an Exa key and an Azure
+          deployment. The current shape is the failure mode the deep-module lens warns about in reverse:
+          the pure helpers (<span class="mono">buildFindingsFromRiskAssessment</span>,
+          <span class="mono">selectTopPaths</span>) are trivially testable, and the real bugs live in the
+          orchestration that calls them — where there is no test surface at all.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">SOLUTION</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          Keep the pipeline as one module — do <em>not</em> shred it into helpers. Change its interface to
+          emit a stream of <strong class="text-zinc-200">PipelineEvent</strong>s
+          (<span class="mono">PhaseEntered</span>, <span class="mono">EntityResolved</span>,
+          <span class="mono">EvidenceCollected</span>, <span class="mono">SectionCompleted</span>,
+          <span class="mono">SectionFailed</span>, <span class="mono">RunSettled</span>) rather than calling
+          the repository directly. A ~20-line applier folds events into the EvaluationStore from candidate 2.
+          Collectors and Section Agents arrive as constructor dependencies.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">BENEFITS</h3>
+        <ul class="text-sm text-zinc-400 leading-relaxed space-y-2 list-disc pl-5">
+          <li><strong class="text-zinc-300">Locality preserved:</strong> the sequencing stays in one readable
+            function; only the <em>writes</em> move behind the seam. This is deepening, not extraction.</li>
+          <li><strong class="text-zinc-300">The interface is the test surface:</strong> feed fake collectors
+            and fake agents, collect the event list, assert the sequence. "Two sections fail → run settles
+            <span class="mono">partial</span>" becomes a five-line test.</li>
+          <li><strong class="text-zinc-300">Leverage:</strong> the same event stream is what a future SSE
+            progress endpoint or an Inngest step-function would consume. Today those would each need a
+            second copy of the orchestration.</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-3">BEFORE / AFTER</h3>
+
+        <div class="panel rounded-lg p-4 mb-4">
+          <div class="mono text-[10px] text-red-400/80 mb-3 tracking-widest">BEFORE — LOGIC AND I/O INTERLEAVED</div>
+          <div class="space-y-1 mono text-[10px]">
+            <div class="flex gap-1"><span class="brick bg-red-500/25 border border-red-500/40 px-2 py-1 flex-1">repo.setPhase</span></div>
+            <div class="flex gap-1"><span class="brick bg-sky-500/20 border border-sky-500/30 px-2 py-1 flex-1">resolveEntityLive</span></div>
+            <div class="flex gap-1"><span class="brick bg-red-500/25 border border-red-500/40 px-2 py-1 flex-1">repo.setEntity</span></div>
+            <div class="flex gap-1"><span class="brick bg-red-500/25 border border-red-500/40 px-2 py-1 flex-1">repo.setPhase</span></div>
+            <div class="flex gap-1"><span class="brick bg-sky-500/20 border border-sky-500/30 px-2 py-1 flex-1">collect × 2</span></div>
+            <div class="flex gap-1"><span class="brick bg-red-500/25 border border-red-500/40 px-2 py-1 flex-1">repo.addEvidence × 2</span></div>
+            <div class="flex gap-1"><span class="brick bg-amber-500/20 border border-amber-500/30 px-2 py-1 flex-1">decide: no evidence → fail</span></div>
+            <div class="flex gap-1"><span class="brick bg-red-500/25 border border-red-500/40 px-2 py-1 flex-1">repo.setSectionRunning × 9</span></div>
+            <div class="flex gap-1"><span class="brick bg-sky-500/20 border border-sky-500/30 px-2 py-1 flex-1">runSectionAgent × 9</span></div>
+            <div class="flex gap-1"><span class="brick bg-red-500/25 border border-red-500/40 px-2 py-1 flex-1">repo.completeSection / failSection</span></div>
+            <div class="flex gap-1"><span class="brick bg-amber-500/20 border border-amber-500/30 px-2 py-1 flex-1">decide: partial vs completed</span></div>
+            <div class="flex gap-1"><span class="brick bg-red-500/25 border border-red-500/40 px-2 py-1 flex-1">repo.markPartial / markCompleted</span></div>
+          </div>
+          <div class="rule my-3"></div>
+          <div class="text-[10px] text-zinc-500">amber = the logic worth testing · red = why you can't</div>
+        </div>
+
+        <div class="panel rounded-lg p-4">
+          <div class="mono text-[10px] text-emerald-400/80 mb-3 tracking-widest">AFTER — ONE SEAM, EVENTS ACROSS IT</div>
+<pre class="mermaid">
+flowchart LR
+  DEPS["collectors + agents<br/>(injected)"] --> PIPE["runEvaluation()<br/>same sequencing"]
+  PIPE -->|PipelineEvent| APPLY["applyEvents()"]
+  APPLY --> STORE["EvaluationStore"]
+  PIPE -.->|"same events"| TEST["assert sequence<br/>no DB, no keys"]
+  style TEST fill:#0f2a1c,stroke:#10b981
+</pre>
+        </div>
+
+        <div class="mt-5 panel rounded-lg p-4">
+          <div class="mono text-[10px] text-zinc-500 mb-2 tracking-widest">DELETION TEST</div>
+          <p class="text-sm text-zinc-400 leading-relaxed">
+            Delete the 14 inline <span class="mono">repo.*</span> calls → the write policy must be stated once,
+            in one place, instead of being smeared across the run.
+            <strong class="text-emerald-400">Concentrates.</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- CANDIDATE 4                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <article class="card rounded-xl p-8 mb-10">
+    <div class="flex items-start justify-between gap-6 mb-6">
+      <div>
+        <div class="mono text-xs text-zinc-600 mb-2">CANDIDATE 04</div>
+        <h2 class="text-3xl font-semibold tracking-tight">Evidence collection is three shallow layers deep</h2>
+      </div>
+      <span class="shrink-0 mono text-xs rounded-full bg-sky-500/15 text-sky-300 px-3 py-1.5 border border-sky-500/30">Worth exploring</span>
+    </div>
+
+    <div class="grid gap-8 lg:grid-cols-2">
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">FILES</h3>
+        <ul class="mono text-sm text-zinc-300 space-y-1 mb-6">
+          <li>lib/firecrawl.ts <span class="text-zinc-600">19 ln</span></li>
+          <li>lib/exa.ts <span class="text-zinc-600">16 ln</span></li>
+          <li>lib/collectors/official.ts <span class="text-zinc-600">OfficialPage</span></li>
+          <li>lib/collectors/external.ts <span class="text-zinc-600">ExternalResult</span></li>
+          <li>lib/collectors/entity.ts</li>
+          <li>lib/evaluations/run-pipeline.ts <span class="text-zinc-600">:69-125</span></li>
+          <li>lib/agents/run-section-agent.ts <span class="text-zinc-600">AgentEvidence</span></li>
+        </ul>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">PROBLEM</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          <em>Evidence</em> exists as four near-identical types —
+          <span class="mono text-zinc-300">OfficialPage</span>,
+          <span class="mono text-zinc-300">ExternalResult</span>,
+          <span class="mono text-zinc-300">AgentEvidence</span>,
+          <span class="mono text-zinc-300">EvidenceItem</span> — and
+          <span class="mono">run-pipeline.ts</span> maps between them <strong>four times in 56 lines</strong>:
+          twice into <span class="mono">repo.addEvidence</span>, twice into
+          <span class="mono">evidenceForAgents</span>. The two mappings assign
+          <span class="mono">id</span> differently, which is why agent citations
+          (<span class="mono">official-0</span>) can never resolve against stored Evidence rows (UUIDs) —
+          a real correctness gap hiding in the mapping noise.
+        </p>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          Beneath that, <span class="mono">lib/exa.ts</span> and <span class="mono">lib/firecrawl.ts</span>
+          are 19-line modules whose entire job is "construct a client, throw if unconfigured" — and each
+          collector then re-implements the same <span class="mono">try { getX() } catch { return [] }</span>
+          degradation dance. Interface complexity ≈ implementation complexity. Shallow.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">SOLUTION</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          One <strong class="text-zinc-200">Evidence Collection</strong> module with a single interface:
+          <span class="mono text-zinc-300">collect(entity) → Evidence[]</span>, where
+          <span class="mono">Evidence</span> is the contract type from candidate 1 (with a server-only
+          <span class="mono">markdown</span> field). Firecrawl/Exa client construction, the
+          degrade-to-empty policy, dedupe, budget caps, and id assignment all move inside. Path scoring and
+          query building stay as private helpers — they are the depth.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">BENEFITS</h3>
+        <ul class="text-sm text-zinc-400 leading-relaxed space-y-2 list-disc pl-5">
+          <li><strong class="text-zinc-300">Locality:</strong> Evidence ids are minted once, so a Claim's
+            <span class="mono">evidenceIds</span> means the same thing in the prompt, the DB and the UI.
+            The citation bug stops being possible.</li>
+          <li><strong class="text-zinc-300">Leverage:</strong> "add GitHub as a source" is one new private
+            fetcher, not a new type + new mapping + new pipeline branch.</li>
+          <li><strong class="text-zinc-300">Test surface:</strong> one fake <span class="mono">collect()</span>
+            unblocks every pipeline test in candidate 3. Degradation ("no Firecrawl key → external-only")
+            becomes assertable instead of a comment.</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-3">BEFORE / AFTER</h3>
+
+        <div class="panel rounded-lg p-4 mb-4 scrollx">
+          <div class="mono text-[10px] text-red-400/80 mb-2 tracking-widest">BEFORE — 4 TYPES, 4 MAPPINGS</div>
+<pre class="mermaid">
+flowchart TD
+  FC["firecrawl.ts"] --> OFF["official.ts<br/>OfficialPage"]
+  EX["exa.ts"] --> EXT["external.ts<br/>ExternalResult"]
+  EX --> ENT["entity.ts"]
+  OFF --> M1["map → addEvidence"]
+  OFF --> M2["map → AgentEvidence<br/>id: official-N"]
+  EXT --> M3["map → addEvidence"]
+  EXT --> M4["map → AgentEvidence<br/>id: external-N"]
+  M1 --> DB[("Evidence rows<br/>id: uuid")]
+  M3 --> DB
+  M2 --> AG["Section Agent<br/>cites official-N"]
+  M4 --> AG
+  AG -.->|"ids never match"| DB
+  style AG fill:#3b1d1d,stroke:#7f1d1d
+</pre>
+        </div>
+
+        <div class="panel rounded-lg p-4 scrollx">
+          <div class="mono text-[10px] text-emerald-400/80 mb-2 tracking-widest">AFTER — ONE DEEP MODULE</div>
+<pre class="mermaid">
+flowchart TD
+  COLL["Evidence Collection<br/>collect(entity) → Evidence[]"]
+  COLL -.- H1["private: firecrawl map+scrape"]
+  COLL -.- H2["private: exa queries"]
+  COLL -.- H3["private: scoring, dedupe, ids, budget"]
+  COLL --> E["Evidence[]<br/>one type, stable ids"]
+  E --> DB[("store")]
+  E --> AG["Section Agent"]
+  style COLL fill:#0f2a1c,stroke:#10b981
+</pre>
+        </div>
+
+        <div class="mt-5 panel rounded-lg p-4">
+          <div class="mono text-[10px] text-zinc-500 mb-2 tracking-widest">DELETION TEST</div>
+          <p class="text-sm text-zinc-400 leading-relaxed">
+            Delete <span class="mono text-zinc-300">lib/exa.ts</span> and
+            <span class="mono text-zinc-300">lib/firecrawl.ts</span> → client construction lands inside the
+            one module that uses it. <strong class="text-emerald-400">Concentrates.</strong>
+            <span class="text-zinc-500">Caveat: <span class="mono">exa.ts</span> has two consumers
+            (external + entity), so verify entity resolution belongs inside this module before collapsing it —
+            that is a question for the grilling session, not a foregone conclusion.</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- CANDIDATE 5                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <article class="card rounded-xl p-8 mb-10">
+    <div class="flex items-start justify-between gap-6 mb-6">
+      <div>
+        <div class="mono text-xs text-zinc-600 mb-2">CANDIDATE 05</div>
+        <h2 class="text-3xl font-semibold tracking-tight">Two ORMs, one of them dead</h2>
+      </div>
+      <span class="shrink-0 mono text-xs rounded-full bg-emerald-500/15 text-emerald-300 px-3 py-1.5 border border-emerald-500/30">Strong</span>
+    </div>
+
+    <div class="grid gap-8 lg:grid-cols-2">
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">FILES</h3>
+        <ul class="mono text-sm text-zinc-300 space-y-1 mb-6">
+          <li>lib/db.ts <span class="text-zinc-600">Prisma — used</span></li>
+          <li>lib/db/index.ts <span class="text-zinc-600">Neon + Drizzle — unused</span></li>
+          <li>lib/db/schema.ts <span class="text-zinc-600">`reports` table — no consumer</span></li>
+          <li>drizzle.config.ts · 4 db:drizzle:* scripts</li>
+          <li>lib/env.ts <span class="text-zinc-600">:34-40 explains the overlap</span></li>
+        </ul>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">PROBLEM</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          <span class="mono text-zinc-300">lib/db.ts</span> and <span class="mono text-zinc-300">lib/db/index.ts</span>
+          are two different databases, one import path apart. Drizzle defines a
+          <span class="mono">reports</span> table that no code reads or writes; Prisma defines
+          <span class="mono">Evaluation</span>/<span class="mono">ReportSection</span>/<span class="mono">Evidence</span>/<span class="mono">Finding</span>,
+          which is the real model. <span class="mono">lib/env.ts</span> carries a comment block explaining
+          the coexistence of two Azure variable sets for the same reason.
+        </p>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          Cost is navigational, and it falls hardest on agents: "where does an Evaluation persist?" has two
+          plausible answers, one of them wrong, and <span class="mono">@/lib/db</span> vs
+          <span class="mono">@/lib/db/index</span> resolve to different modules. That is a trap, not a seam.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">SOLUTION</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          Delete <span class="mono">lib/db/</span>, <span class="mono">drizzle.config.ts</span>, the four
+          <span class="mono">db:drizzle:*</span> scripts, and the
+          <span class="mono">drizzle-orm</span>/<span class="mono">drizzle-kit</span>/<span class="mono">@neondatabase/serverless</span>
+          dependencies. Collapse the duplicate <span class="mono">AZURE_*</span> variable pairs to one set.
+          Behind candidate 2's seam this file is the Prisma adapter's private business anyway.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">BENEFITS</h3>
+        <ul class="text-sm text-zinc-400 leading-relaxed space-y-2 list-disc pl-5">
+          <li><strong class="text-zinc-300">AI-navigability:</strong> one answer to "where is persistence",
+            with no near-miss import path.</li>
+          <li><strong class="text-zinc-300">Leverage:</strong> smaller dependency surface, three fewer packages,
+            one less migration toolchain to keep working.</li>
+          <li><strong class="text-zinc-300">Test surface:</strong> unchanged — this is pure subtraction.
+            Cheapest item on the list.</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-3">BEFORE / AFTER</h3>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="panel rounded-lg p-4">
+            <div class="mono text-[10px] text-red-400/80 mb-3 tracking-widest">BEFORE</div>
+            <div class="space-y-2 mono text-[10px]">
+              <div class="brick bg-red-500/15 border border-red-500/30 px-2 py-2">@/lib/db<br/><span class="text-zinc-500">Prisma · Evaluation…</span></div>
+              <div class="text-center text-red-400/60">≠</div>
+              <div class="brick bg-red-500/15 border border-red-500/30 px-2 py-2">@/lib/db/index<br/><span class="text-zinc-500">Drizzle · reports</span></div>
+              <div class="rule my-2"></div>
+              <div class="brick bg-zinc-700/20 border border-zinc-600/25 px-2 py-1.5 text-zinc-500">drizzle.config.ts</div>
+              <div class="brick bg-zinc-700/20 border border-zinc-600/25 px-2 py-1.5 text-zinc-500">4 npm scripts</div>
+              <div class="brick bg-zinc-700/20 border border-zinc-600/25 px-2 py-1.5 text-zinc-500">3 deps</div>
+              <div class="brick bg-zinc-700/20 border border-zinc-600/25 px-2 py-1.5 text-zinc-500">2× AZURE_* var sets</div>
+            </div>
+          </div>
+          <div class="panel rounded-lg p-4">
+            <div class="mono text-[10px] text-emerald-400/80 mb-3 tracking-widest">AFTER</div>
+            <div class="space-y-2 mono text-[10px]">
+              <div class="brick bg-emerald-500/20 border border-emerald-500/40 px-2 py-6 text-center">@/lib/db<br/><span class="text-emerald-300/70">Prisma only</span></div>
+              <div class="rule my-2"></div>
+              <div class="text-zinc-600 leading-snug">— nothing else —</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-5 panel rounded-lg p-4">
+          <div class="mono text-[10px] text-zinc-500 mb-2 tracking-widest">DELETION TEST</div>
+          <p class="text-sm text-zinc-400 leading-relaxed">
+            The purest case on the page: deleting Drizzle moves complexity <em>nowhere</em>, because nothing
+            depends on it. <strong class="text-emerald-400">Strictly subtracts.</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <!-- CANDIDATE 6                                                  -->
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <article class="card rounded-xl p-8 mb-14">
+    <div class="flex items-start justify-between gap-6 mb-6">
+      <div>
+        <div class="mono text-xs text-zinc-600 mb-2">CANDIDATE 06</div>
+        <h2 class="text-3xl font-semibold tracking-tight">Config is a module-load side effect</h2>
+      </div>
+      <span class="shrink-0 mono text-xs rounded-full bg-sky-500/15 text-sky-300 px-3 py-1.5 border border-sky-500/30">Worth exploring</span>
+    </div>
+
+    <div class="grid gap-8 lg:grid-cols-2">
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">FILES</h3>
+        <ul class="mono text-sm text-zinc-300 space-y-1 mb-6">
+          <li>lib/env.ts <span class="text-zinc-600">:76 — `export const env = loadEnv()`</span></li>
+          <li>lib/db.ts · rate-limit.ts · store.ts <span class="text-zinc-600">globalThis singletons</span></li>
+          <li>package.json <span class="text-zinc-600">no test runner</span></li>
+        </ul>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">PROBLEM</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          <span class="mono">lib/env.ts</span> validates and throws at <em>import</em> time, and it is imported
+          transitively by nearly every backend module. Combined with four
+          <span class="mono">globalThis.__scout*</span> singletons (Prisma client, rate-limit buckets,
+          evaluation store, env itself), importing almost anything in <span class="mono">lib/</span> commits
+          you to a configured process.
+        </p>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          This is why the repo has <strong class="text-zinc-200">zero tests and no test runner</strong> — not
+          discipline, but that the modules are untestable by construction. Candidates 2–4 all end up blocked
+          on this one. Separately, <span class="mono">checkRateLimit</span> already takes
+          <span class="mono">nowMs</span> as a parameter, showing the intent was there.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">SOLUTION</h3>
+        <p class="text-sm text-zinc-400 leading-relaxed mb-4">
+          Make <span class="mono text-zinc-300">loadEnv()</span> the interface and the eager
+          <span class="mono">env</span> const a route-layer convenience. Modules that need config take it as
+          an argument or a small <span class="mono">ScoutConfig</span> object. Add Vitest with a
+          <span class="mono">node</span> environment. The rate limiter and store keep their globals — those
+          are legitimately process-scoped — but expose a constructor for tests.
+        </p>
+
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-2">BENEFITS</h3>
+        <ul class="text-sm text-zinc-400 leading-relaxed space-y-2 list-disc pl-5">
+          <li><strong class="text-zinc-300">The interface becomes the test surface</strong> — currently there
+            isn't one, at any level.</li>
+          <li><strong class="text-zinc-300">Leverage:</strong> unblocks every other candidate's payoff. Without
+            it, deepening the pipeline is a refactor you cannot verify.</li>
+          <li><strong class="text-zinc-300">Locality:</strong> "what does this module need from the
+            environment?" becomes visible in its signature instead of buried in a transitive import.</li>
+        </ul>
+      </div>
+
+      <div>
+        <h3 class="mono text-xs tracking-widest text-zinc-500 mb-3">BEFORE / AFTER</h3>
+        <div class="panel rounded-lg p-4 mb-4 scrollx">
+          <div class="mono text-[10px] text-red-400/80 mb-2 tracking-widest">BEFORE — IMPORT = COMMITMENT</div>
+<pre class="mermaid">
+flowchart LR
+  T["any test file"] --> M["import lib/evaluations/*"]
+  M --> E["lib/env.ts<br/>loadEnv() at module scope"]
+  E -->|"unset vars"| X["throws before<br/>a single assertion"]
+  M --> G["globalThis.__scoutPrisma<br/>__scoutRateLimit<br/>__scoutEvaluationStore"]
+  style X fill:#3b1d1d,stroke:#7f1d1d
+</pre>
+        </div>
+        <div class="panel rounded-lg p-4 scrollx">
+          <div class="mono text-[10px] text-emerald-400/80 mb-2 tracking-widest">AFTER — CONFIG CROSSES AN INTERFACE</div>
+<pre class="mermaid">
+flowchart LR
+  ROUTE["route layer"] --> LE["loadEnv()"]
+  LE --> CFG["ScoutConfig"]
+  CFG --> MOD["lib modules<br/>(take config as arg)"]
+  T["vitest"] --> FAKE["fixture config"]
+  FAKE --> MOD
+  style FAKE fill:#0f2a1c,stroke:#10b981
+</pre>
+        </div>
+
+        <div class="mt-5 panel rounded-lg p-4">
+          <div class="mono text-[10px] text-zinc-500 mb-2 tracking-widest">DELETION TEST</div>
+          <p class="text-sm text-zinc-400 leading-relaxed">
+            Weaker than the others. Deleting the eager <span class="mono">env</span> export mostly
+            <em>moves</em> the call to route entry — the win is testability and explicit dependencies, not
+            concentration. Hence <em>Worth exploring</em>, and best done as the first step of candidate 2 or 3
+            rather than on its own.
+          </p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- ══════════ TOP RECOMMENDATION ══════════ -->
+  <section class="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] p-8 mb-12">
+    <div class="mono text-xs tracking-widest text-emerald-400 mb-3">TOP RECOMMENDATION</div>
+    <h2 class="text-3xl font-semibold tracking-tight mb-5">
+      Start with 02 — give the <span class="mono text-2xl">isLiveMode()</span> fork a real seam
+    </h2>
+
+    <div class="grid gap-8 lg:grid-cols-2">
+      <div>
+        <p class="text-sm text-zinc-300 leading-relaxed mb-4">
+          It is the only candidate where the seam is <strong>already proven</strong>. The rule is
+          <em>one adapter = hypothetical seam, two = real</em> — and there are literally two
+          implementations of <em>Evaluation</em> persistence in the tree today, plus two DTO builders that
+          have already drifted apart on percent, etag format and entity visibility. The seam isn't a bet
+          about the future; it is a description of the present, missing only an interface.
+        </p>
+        <p class="text-sm text-zinc-300 leading-relaxed mb-4">
+          It also pays for the rest. Candidate 3 needs somewhere for pipeline events to land — that is the
+          store. Candidate 4's stable Evidence ids need one owner of Evidence writes — that is the store.
+          Candidate 6's payoff is tests, and the in-memory adapter <em>is</em> the test double, already
+          written. Doing 02 first turns 03, 04 and 06 from refactors-on-faith into verifiable ones.
+        </p>
+        <p class="text-sm text-zinc-300 leading-relaxed">
+          Sequence: <strong class="text-zinc-100">05</strong> first as a ten-minute clearing
+          (delete Drizzle so "where is persistence" has one answer before you name the seam), then
+          <strong class="text-zinc-100">02</strong>, then <strong class="text-zinc-100">01</strong> —
+          the Contract module is highest-value overall but touches every file, so it goes in after the
+          structure has settled and tests exist to catch the drift it is meant to prevent.
+        </p>
+      </div>
+
+      <div class="panel rounded-lg p-5 scrollx">
+        <div class="mono text-[10px] text-zinc-500 mb-3 tracking-widest">DEPENDENCY ORDER</div>
+<pre class="mermaid">
+flowchart TD
+  C5["05 · delete Drizzle<br/>pure subtraction"] --> C2["02 · EvaluationStore seam"]
+  C6["06 · config as argument<br/>+ vitest"] --> C2
+  C2 --> C3["03 · pipeline events"]
+  C2 --> C4["04 · Evidence Collection"]
+  C3 --> C1["01 · Contract module"]
+  C4 --> C1
+  style C2 fill:#0f2a1c,stroke:#10b981
+  style C5 fill:#1a2432,stroke:#3b82f6
+</pre>
+        <div class="rule my-4"></div>
+        <div class="text-[11px] text-zinc-500 leading-relaxed">
+          01 sits last not because it matters least — it is the highest-leverage change on the page — but
+          because it is a whole-tree edit that wants a test surface underneath it.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="mono text-xs text-zinc-600 border-t hair pt-6">
+    scout-ai · architecture review · no ADRs contradicted · vocabulary: module · interface · depth · seam ·
+    adapter · leverage · locality
+  </footer>
+
+</div>
+</body>
+</html>
