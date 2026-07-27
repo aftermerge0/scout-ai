@@ -1,6 +1,6 @@
 import { getExa } from "@/lib/exa";
 
-import { isOnTopicResult } from "./relevance";
+import { isOnTopicReviewResult } from "./relevance";
 
 export type ExternalResult = {
   url: string;
@@ -150,7 +150,7 @@ export async function collectExternalSources(
         markdown: text ?? summary ?? null,
         fetchedAt: new Date(),
       };
-      if (isReviewDomain(item.domain) && !isOnTopicResult(item, companyName, domain)) {
+      if (isReviewDomain(item.domain) && !isOnTopicReviewResult(item, companyName, domain)) {
         continue;
       }
       merged.push(item);

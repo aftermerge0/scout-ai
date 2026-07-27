@@ -3,16 +3,20 @@ import { getFirecrawl } from "@/lib/firecrawl";
 import type { ExternalResult } from "./external";
 import {
   companyTokens,
-  isOnTopicResult,
+  isOnTopicReviewResult,
   mentionsCompany,
 } from "./relevance";
 
-const EMPLOYEE_REVIEW_HOSTS = ["glassdoor.com", "ambitionbox.com"] as const;
-const CUSTOMER_REVIEW_HOSTS = ["g2.com", "capterra.com", "trustpilot.com"] as const;
-const REVIEW_HOSTS = [...EMPLOYEE_REVIEW_HOSTS, ...CUSTOMER_REVIEW_HOSTS] as const;
+const REVIEW_HOSTS = [
+  "glassdoor.com",
+  "ambitionbox.com",
+  "g2.com",
+  "capterra.com",
+  "trustpilot.com",
+] as const;
 
 const MAX_REVIEW_PAGES = 8;
-const SCRAPE_TIMEOUT_MS = 25_000;
+const SCRAPE_TIMEOUT_MS = 30_000;
 
 function hostnameOf(url: string): string | null {
   try {
@@ -36,11 +40,7 @@ function companySlug(companyName: string): string {
 }
 
 /**
- * Seed high-value review URLs we can scrape directly:
- * - AmbitionBox / G2 work from a company slug
- * - Glassdoor Reviews need a company id (E#####) extracted from any on-topic
- *   Glassdoor hit (salary/DEI/interview pages still carry the id)
- *
+ * Seed high-value review URLs we can scrape directly.
  * Glassdoor + AmbitionBox = employee reviews.
  * G2 / Capterra / Trustpilot = customer/product reviews.
  */
@@ -49,70 +49,77 @@ export function expandCanonicalReviewUrls(
   companyName: string,
   domain: string | null,
 ): string[] {
-  const urls = new Set<string>();
-  const slug = companySlug(companyName);
-  const tokens = companyTokens(companyName, domain);
-  const nameSlug = companyName.replace(/\s+/g, "-");
+  const urls: string[] = [];
+  const seen = new Set<string>();
+  const add = (url: string) => {
+    if (seen.has(url)) return;
+    seen.add(url);
+    urls.push(url);
+  };
 
-  // Always try slug-based employee + customer review pages.
-  if (slug.length >= 2) {
-    urls.add(`https://www.ambitionbox.com/reviews/${slug}-reviews`);
-    urls.add(`https://www.ambitionbox.com/overview/${slug}-overview`);
-    urls.add(`https://www.g2.com/products/${slug}/reviews`);
-    urls.add(`https://www.g2.com/sellers/${slug}`);
+  const slug = companySlug(companyName);
+  const nameSlug = companyName.replace(/\s+/g, "-");
+  const tokens = companyTokens(companyName, domain);
+
+  // Employee reviews first (priority for Firecrawl budget).
+  const onTopicGlassdoor = external.filter(
+    (item) =>
+      (hostnameOf(item.url) ?? "").includes("glassdoor.com") &&
+      isOnTopicReviewResult(item, companyName, domain),
+  );
+  let glassdoorId: string | null = null;
+  for (const item of onTopicGlassdoor) {
+    const idMatch = item.url.match(/E(\d{4,})/i);
+    if (idMatch) {
+      glassdoorId = idMatch[1]!;
+      break;
+    }
   }
 
-  let glassdoorId: string | null = null;
+  if (glassdoorId) {
+    add(`https://www.glassdoor.com/Reviews/${nameSlug}-Reviews-E${glassdoorId}.htm`);
+    add(
+      `https://www.glassdoor.com/Overview/Working-at-${nameSlug}-EI_IE${glassdoorId}.htm`,
+    );
+  }
+
+  if (slug.length >= 2) {
+    add(`https://www.ambitionbox.com/reviews/${slug}-reviews`);
+    add(`https://www.ambitionbox.com/overview/${slug}-overview`);
+  }
+
+  // Customer reviews next.
+  if (slug.length >= 2) {
+    add(`https://www.g2.com/products/${slug}/reviews`);
+    add(`https://www.g2.com/sellers/${slug}`);
+  }
 
   for (const item of external) {
     if (!isReviewHost(item.url)) continue;
-    if (!isOnTopicResult(item, companyName, domain)) continue;
-
+    if (!isOnTopicReviewResult(item, companyName, domain)) continue;
     const host = hostnameOf(item.url) ?? "";
 
-    if (host.includes("glassdoor.com")) {
-      const idMatch = item.url.match(/E(\d{4,})/i);
-      if (idMatch) glassdoorId = idMatch[1]!;
+    if (host.includes("ambitionbox.com") && /\/reviews\//i.test(item.url)) {
+      add(item.url.split("?")[0]!);
     }
-
-    if (host.includes("ambitionbox.com")) {
-      if (/\/reviews\//i.test(item.url) && mentionsCompany(item.url, tokens)) {
-        urls.add(item.url.split("?")[0]!);
-      }
-      const overview = item.url.match(/\/overview\/([a-z0-9-]+)-overview/i);
-      if (overview && mentionsCompany(overview[1]!, tokens)) {
-        urls.add(`https://www.ambitionbox.com/reviews/${overview[1]}-reviews`);
-      }
+    if (host.includes("g2.com") && (/\/products\//i.test(item.url) || /\/sellers\//i.test(item.url))) {
+      add(item.url.split("?")[0]!);
     }
-
-    if (host.includes("g2.com")) {
-      if (/\/products\//i.test(item.url) || /\/sellers\//i.test(item.url)) {
-        urls.add(item.url.split("?")[0]!);
-      }
-    }
-
     if (
       host.includes("capterra.com") &&
       /\/reviews/i.test(item.url) &&
       mentionsCompany(`${item.url} ${item.title ?? ""}`, tokens)
     ) {
-      urls.add(item.url.split("?")[0]!);
+      add(item.url.split("?")[0]!);
     }
   }
 
-  if (glassdoorId) {
-    urls.add(`https://www.glassdoor.com/Reviews/${nameSlug}-Reviews-E${glassdoorId}.htm`);
-    urls.add(
-      `https://www.glassdoor.com/Overview/Working-at-${nameSlug}-EI_IE${glassdoorId}.htm`,
-    );
-  }
-
-  return Array.from(urls).slice(0, MAX_REVIEW_PAGES);
+  return urls.slice(0, MAX_REVIEW_PAGES);
 }
 
 /**
  * Deep-scrapes employee + customer review pages so agents get ratings/quotes.
- * Seeds AmbitionBox/G2 by slug and Glassdoor Reviews once a company id is known.
+ * Always tries AmbitionBox/G2 by slug; Glassdoor Reviews once a company id is known.
  */
 export async function enrichReviewSources(
   external: ExternalResult[],
@@ -124,23 +131,18 @@ export async function enrichReviewSources(
     firecrawl = getFirecrawl();
   } catch {
     return external.filter(
-      (r) => isOnTopicResult(r, companyName, domain) || !isReviewHost(r.url),
+      (r) => isOnTopicReviewResult(r, companyName, domain) || !isReviewHost(r.url),
     );
   }
 
   const filtered = external.filter((r) => {
     if (!isReviewHost(r.url)) return true;
-    return isOnTopicResult(r, companyName, domain);
+    return isOnTopicReviewResult(r, companyName, domain);
   });
 
   const canonical = expandCanonicalReviewUrls(filtered, companyName, domain);
   const existingUrls = new Set(filtered.map((r) => r.url));
-  const toScrape = [
-    ...canonical,
-    ...filtered.filter((r) => isReviewHost(r.url)).map((r) => r.url),
-  ]
-    .filter((url, i, arr) => arr.indexOf(url) === i)
-    .slice(0, MAX_REVIEW_PAGES);
+  const toScrape = canonical.slice(0, MAX_REVIEW_PAGES);
 
   if (toScrape.length === 0) return filtered;
 
@@ -158,7 +160,7 @@ export async function enrichReviewSources(
       if (!markdown || markdown.length < 120) return null;
       if (
         !mentionsCompany(
-          `${url} ${doc.metadata?.title ?? ""} ${markdown.slice(0, 500)}`,
+          `${url} ${doc.metadata?.title ?? ""} ${markdown.slice(0, 800)}`,
           tokens,
         )
       ) {
@@ -183,9 +185,30 @@ export async function enrichReviewSources(
 
   if (scrapedByUrl.size === 0) return filtered;
 
-  const merged = filtered.map((item) => scrapedByUrl.get(item.url) ?? item);
+  // Prefer scraped review pages; drop DEI/salary/interview side pages when
+  // we successfully scraped the real Reviews URL for the same Glassdoor id.
+  const scrapedGlassdoorReviewIds = new Set<string>();
+  for (const url of scrapedByUrl.keys()) {
+    if (/glassdoor\.com\/Reviews\//i.test(url)) {
+      const id = url.match(/E(\d{4,})/i)?.[1];
+      if (id) scrapedGlassdoorReviewIds.add(id);
+    }
+  }
+
+  const merged = filtered
+    .filter((item) => {
+      const host = hostnameOf(item.url) ?? "";
+      if (!host.includes("glassdoor.com")) return true;
+      const id = item.url.match(/E(\d{4,})/i)?.[1];
+      if (id && scrapedGlassdoorReviewIds.has(id) && !/\/Reviews\//i.test(item.url)) {
+        return false;
+      }
+      return true;
+    })
+    .map((item) => scrapedByUrl.get(item.url) ?? item);
+
   for (const [url, item] of scrapedByUrl) {
-    if (!existingUrls.has(url)) merged.push(item);
+    if (!existingUrls.has(url)) merged.unshift(item);
   }
   return merged;
 }

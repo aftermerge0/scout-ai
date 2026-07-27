@@ -34,3 +34,18 @@ export function isOnTopicResult(
   const blob = `${result.url} ${result.title ?? ""} ${result.snippet ?? ""} ${result.domain ?? ""}`;
   return mentionsCompany(blob, tokens);
 }
+
+/**
+ * Stricter check for review-site rows: company must appear in the URL or
+ * title. Snippets alone are too noisy (Exa summaries often bleed keywords).
+ */
+export function isOnTopicReviewResult(
+  result: RelevanceFields,
+  companyName: string,
+  domain: string | null,
+): boolean {
+  const tokens = companyTokens(companyName, domain);
+  if (tokens.length === 0) return true;
+  const blob = `${result.url} ${result.title ?? ""}`;
+  return mentionsCompany(blob, tokens);
+}

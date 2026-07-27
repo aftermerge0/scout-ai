@@ -369,18 +369,18 @@ function ReviewCard({ review }: { review: ReviewSourceSummary }) {
       ) : null}
       {(review.pros.length > 0 || review.cons.length > 0) && (
         <div className="grid gap-3 sm:grid-cols-2">
-          {review.pros.length > 0 ? (
-            <div className="space-y-1">
-              <Label>Pros</Label>
-              <Bullets items={review.pros} marker="+" />
-            </div>
-          ) : null}
-          {review.cons.length > 0 ? (
-            <div className="space-y-1">
-              <Label>Cons</Label>
-              <Bullets items={review.cons} marker="−" />
-            </div>
-          ) : null}
+            {review.pros.filter(Boolean).length > 0 ? (
+              <div className="space-y-1">
+                <Label>Pros</Label>
+                <Bullets items={review.pros.filter(Boolean)} marker="+" />
+              </div>
+            ) : null}
+            {review.cons.filter(Boolean).length > 0 ? (
+              <div className="space-y-1">
+                <Label>Cons</Label>
+                <Bullets items={review.cons.filter(Boolean)} marker="−" />
+              </div>
+            ) : null}
         </div>
       )}
       {review.sampleQuotes.length > 0 ? (
