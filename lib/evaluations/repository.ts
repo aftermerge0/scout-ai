@@ -24,9 +24,9 @@ import type {
 import type { Evaluation, Evidence, FindingRow, ReportSection } from "@/lib/db"
 
 /**
- * Drizzle-backed persistence for the real (`SCOUT_API_MODE=live`) pipeline.
- * Mirrors the shape of `lib/evaluations/store.ts` (the stub's in-memory
- * store) but is durable and shared across serverless instances.
+ * Drizzle-backed persistence for the live (`SCOUT_API_MODE=live`) pipeline.
+ * Route read/create go through `lib/evaluations/store` (EvaluationStore seam);
+ * pipeline writes still call this module directly until Candidate 03.
  */
 
 export type EvaluationRow =
