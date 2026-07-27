@@ -1,108 +1,59 @@
-import {
-  SECTION_KEYS,
-  SECTION_TITLES,
-  type ApiError,
-  type CreateEvaluationResponse,
-  type EvaluationDto,
-  type EvidenceIncludeMode,
-  type ReportSectionDto,
-  type SectionKey,
+import type {
+  CreateEvaluationResponse,
+  EvaluationDto,
+  EvidenceIncludeMode,
+  EvidenceItem,
+  ReportSectionDto,
 } from "@/lib/api-types";
-import { computeProgress, STUB_TIMELINE } from "@/lib/evaluations/progress";
-import type { EvaluationRecord } from "@/lib/evaluations/store";
-
-const PIPELINE_FAILED_ERROR: ApiError = {
-  code: "PIPELINE_FAILED",
-  message: "Could not collect official sources for this domain.",
-  phase: "collecting_official",
-};
+import type { EvaluationSnapshot, EvaluationSnapshotEvidence } from "@/lib/evaluations/store";
 
 export function toEvaluationDto(
-  record: EvaluationRecord,
-  opts: { includeEvidence: EvidenceIncludeMode; now?: number },
+  snapshot: EvaluationSnapshot,
+  opts: { includeEvidence: EvidenceIncludeMode },
 ): { dto: EvaluationDto; etag: string } {
-  const now = opts.now ?? Date.now();
-  const progress = computeProgress(record.createdAt, now, record.resolved.willFail);
-  const etag = `W/"${progress.status}-${progress.percent}-${progress.sectionsCompleted}"`;
+  const sections: ReportSectionDto[] = snapshot.sections.map((section) => ({
+    key: section.key,
+    title: section.title,
+    status: section.status,
+    confidence: section.confidence,
+    updatedAt: section.updatedAt ? section.updatedAt.toISOString() : null,
+    error: section.error,
+    data: section.data as ReportSectionDto["data"],
+  }));
 
-  const resolvedVisible = progress.phase !== "queued" && progress.phase !== "resolving_entity";
-  const nowIso = new Date(now).toISOString();
-
-  let completedAt: string | null = null;
-  if (progress.status === "completed") {
-    completedAt = new Date(record.createdAt + STUB_TIMELINE.recommendEnd).toISOString();
-  } else if (progress.status === "failed") {
-    completedAt = new Date(record.createdAt + STUB_TIMELINE.failAt).toISOString();
-  }
-
-  const sections: ReportSectionDto[] = SECTION_KEYS.map((key: SectionKey) => {
-    const status = progress.sectionStatuses[key];
-    const isCompleted = status === "completed";
-    return {
-      key,
-      title: SECTION_TITLES[key],
-      status,
-      confidence: isCompleted ? record.content.sectionConfidence[key] : null,
-      updatedAt: status === "pending" ? null : nowIso,
-      error: null,
-      data: isCompleted ? record.content.sections[key] : null,
-    };
-  });
-
-  const findings = record.content.findings.filter(
-    (finding) => progress.sectionStatuses[finding.sectionKey] === "completed",
-  );
-
+  const allEvidence = toEvidenceItems(snapshot.evidence);
   const evidence =
     opts.includeEvidence === "none"
       ? []
       : opts.includeEvidence === "summary"
-        ? record.content.evidence.slice(0, 40)
-        : record.content.evidence;
+        ? allEvidence.slice(0, 40)
+        : allEvidence;
 
-  const execDone = progress.sectionStatuses.executive_summary === "completed";
-  const summary = execDone
-    ? {
-        overallScore: record.content.sections.executive_summary.overallScore,
-        verdict: record.content.sections.recommendation.adopt,
-        confidence: record.content.sections.executive_summary.confidence,
-        headline: record.content.sections.executive_summary.headline,
-        bestSuitedFor: record.content.sections.executive_summary.bestSuitedFor,
-        avoidIf: record.content.sections.executive_summary.avoidIf,
-      }
-    : {
-        overallScore: null,
-        verdict: null,
-        confidence: null,
-        headline: null,
-        bestSuitedFor: [],
-        avoidIf: [],
-      };
-
-  const shouldPoll = progress.status === "queued" || progress.status === "running";
+  const shouldPoll = snapshot.status === "queued" || snapshot.status === "running";
+  const etag = `W/"${snapshot.updatedAt.getTime()}-${snapshot.status}-${snapshot.progress.sectionsCompleted}"`;
 
   const dto: EvaluationDto = {
-    id: record.id,
-    status: progress.status,
-    phase: progress.phase,
-    input: record.input,
-    normalizedUrl: resolvedVisible ? record.resolved.normalizedUrl : null,
-    companyName: resolvedVisible ? record.resolved.companyName : null,
-    domain: resolvedVisible ? record.resolved.domain : null,
-    createdAt: new Date(record.createdAt).toISOString(),
-    updatedAt: completedAt ?? nowIso,
-    completedAt,
-    error: progress.status === "failed" ? PIPELINE_FAILED_ERROR : null,
+    id: snapshot.id,
+    status: snapshot.status,
+    phase: snapshot.phase,
+    input: snapshot.input,
+    normalizedUrl: snapshot.normalizedUrl,
+    companyName: snapshot.companyName,
+    domain: snapshot.domain,
+    createdAt: snapshot.createdAt.toISOString(),
+    updatedAt: snapshot.updatedAt.toISOString(),
+    completedAt: snapshot.completedAt ? snapshot.completedAt.toISOString() : null,
+    error: snapshot.error,
     progress: {
-      percent: progress.percent,
-      phase: progress.phase,
-      phases: progress.phases,
-      sectionsCompleted: progress.sectionsCompleted,
-      sectionsTotal: progress.sectionsTotal,
+      percent: snapshot.progress.percent,
+      phase: snapshot.progress.phase,
+      phases: snapshot.progress.phases,
+      sectionsCompleted: snapshot.progress.sectionsCompleted,
+      sectionsTotal: snapshot.progress.sectionsTotal,
     },
-    summary,
+    summary: snapshot.summary,
     sections,
-    findings,
+    findings: snapshot.findings,
     evidence,
     poll: {
       shouldPoll,
@@ -114,8 +65,20 @@ export function toEvaluationDto(
   return { dto, etag };
 }
 
-export function toCreateEvaluationResponse(record: EvaluationRecord): CreateEvaluationResponse {
-  const { dto } = toEvaluationDto(record, { includeEvidence: "none", now: record.createdAt });
+export function toEvidenceItems(evidence: EvaluationSnapshotEvidence[]): EvidenceItem[] {
+  return evidence.map((item) => ({
+    id: item.id,
+    sourceType: item.sourceType,
+    url: item.url,
+    title: item.title,
+    domain: item.domain,
+    snippet: item.snippet,
+    fetchedAt: item.fetchedAt.toISOString(),
+  }));
+}
+
+export function toCreateEvaluationResponse(snapshot: EvaluationSnapshot): CreateEvaluationResponse {
+  const { dto } = toEvaluationDto(snapshot, { includeEvidence: "none" });
   return {
     id: dto.id,
     status: dto.status,
@@ -125,7 +88,7 @@ export function toCreateEvaluationResponse(record: EvaluationRecord): CreateEval
     companyName: dto.companyName,
     domain: dto.domain,
     createdAt: dto.createdAt,
-    reportUrl: `/report/${record.id}`,
-    pollAfterMs: dto.poll.pollAfterMs || 2000,
+    reportUrl: `/report/${snapshot.id}`,
+    pollAfterMs: dto.poll.pollAfterMs,
   };
 }

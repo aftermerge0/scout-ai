@@ -2,23 +2,24 @@ import { after } from "next/server";
 import { ZodError } from "zod";
 
 import { ApiRouteError, errorResponseFor, jsonOk } from "@/lib/api-errors";
-import type { CreateEvaluationResponse } from "@/lib/api-types";
+import type { CreateEvaluationResponse, EvaluationContext } from "@/lib/api-types";
 import { resolveEntity } from "@/lib/evaluations/domain";
 import { createEvaluationSchema } from "@/lib/evaluations/validation";
-import { createEvaluationRecord } from "@/lib/evaluations/store";
-import * as repo from "@/lib/evaluations/repository";
+import { getEvaluationStore } from "@/lib/evaluations/store";
 import { toCreateEvaluationResponse } from "@/lib/evaluations/to-dto";
 import { clientIpFrom, checkRateLimit } from "@/lib/evaluations/rate-limit";
 import { runEvaluationPipeline } from "@/lib/evaluations/run-pipeline";
-import { env, isLiveMode } from "@/lib/env";
+import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 // The pipeline runs in `after()`, inside this invocation's budget.
 export const maxDuration = 300;
 
+const evaluationStore = getEvaluationStore();
+
 /** Compares the requested context against a stored `contextJson` value for cache-hit eligibility. */
-function contextsMatch(a: import("@/lib/api-types").EvaluationContext | null, storedContextJson: unknown): boolean {
-  return JSON.stringify(a ?? null) === JSON.stringify(storedContextJson ?? null);
+function contextsMatch(a: EvaluationContext | null, b: EvaluationContext | null): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
 export async function POST(request: Request) {
@@ -37,57 +38,32 @@ export async function POST(request: Request) {
       throw new ApiRouteError("RATE_LIMITED", "Too many evaluation requests. Please wait a moment and try again.");
     }
 
-    if (!isLiveMode()) {
-      const record = createEvaluationRecord(parsed.input, context);
-      return jsonOk(toCreateEvaluationResponse(record), { status: 201 });
-    }
-
     const resolved = resolveEntity(parsed.input);
     let cacheHit = false;
     let responseBody: CreateEvaluationResponse;
 
     const dedupeWindowMs = env.SCOUT_DEDUPE_WINDOW_HOURS * 60 * 60 * 1000;
     const existing = resolved.domain
-      ? await repo.findRecentByDomain(resolved.domain, Date.now() - dedupeWindowMs)
+      ? await evaluationStore.findRecentByDomain(resolved.domain, Date.now() - dedupeWindowMs)
       : null;
 
-    if (existing && contextsMatch(context, existing.contextJson)) {
+    if (existing && contextsMatch(context, existing.context)) {
       cacheHit = true;
-      responseBody = {
-        id: existing.id,
-        status: existing.status as CreateEvaluationResponse["status"],
-        phase: existing.phase as CreateEvaluationResponse["phase"],
-        input: existing.input,
-        normalizedUrl: existing.normalizedUrl,
-        companyName: existing.companyName,
-        domain: existing.domain,
-        createdAt: existing.createdAt.toISOString(),
-        reportUrl: `/report/${existing.id}`,
-        pollAfterMs: 0,
-      };
+      responseBody = toCreateEvaluationResponse(existing);
     } else {
-      const evaluation = await repo.createEvaluation(parsed.input, context);
+      const evaluation = await evaluationStore.create(parsed.input, context);
       // Respond 201 now; the pipeline keeps running after the response and
       // reports progress by writing to the evaluation row.
-      after(async () => {
-        await runEvaluationPipeline({
-          evaluationId: evaluation.id,
-          input: parsed.input,
-          context,
+      if (evaluation.shouldRunPipeline) {
+        after(async () => {
+          await runEvaluationPipeline({
+            evaluationId: evaluation.id,
+            input: parsed.input,
+            context,
+          });
         });
-      });
-      responseBody = {
-        id: evaluation.id,
-        status: "queued",
-        phase: "queued",
-        input: evaluation.input,
-        normalizedUrl: null,
-        companyName: null,
-        domain: null,
-        createdAt: evaluation.createdAt.toISOString(),
-        reportUrl: `/report/${evaluation.id}`,
-        pollAfterMs: 2000,
-      };
+      }
+      responseBody = toCreateEvaluationResponse(evaluation);
     }
 
     return jsonOk(responseBody, { status: 201, headers: { "X-Scout-Cache": cacheHit ? "HIT" : "MISS" } });
