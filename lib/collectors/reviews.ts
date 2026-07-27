@@ -7,13 +7,9 @@ import {
   mentionsCompany,
 } from "./relevance";
 
-const REVIEW_HOSTS = [
-  "glassdoor.com",
-  "ambitionbox.com",
-  "g2.com",
-  "capterra.com",
-  "trustpilot.com",
-] as const;
+const EMPLOYEE_REVIEW_HOSTS = ["glassdoor.com", "ambitionbox.com"] as const;
+const CUSTOMER_REVIEW_HOSTS = ["g2.com", "capterra.com", "trustpilot.com"] as const;
+const REVIEW_HOSTS = [...EMPLOYEE_REVIEW_HOSTS, ...CUSTOMER_REVIEW_HOSTS] as const;
 
 const MAX_REVIEW_PAGES = 8;
 const SCRAPE_TIMEOUT_MS = 25_000;
@@ -32,9 +28,21 @@ function isReviewHost(url: string): boolean {
   return REVIEW_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
 }
 
+function companySlug(companyName: string): string {
+  return companyName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 /**
- * From Glassdoor/AmbitionBox/G2 hits, synthesize canonical review URLs so we
- * scrape ratings pages instead of DEI/salary/interview side pages.
+ * Seed high-value review URLs we can scrape directly:
+ * - AmbitionBox / G2 work from a company slug
+ * - Glassdoor Reviews need a company id (E#####) extracted from any on-topic
+ *   Glassdoor hit (salary/DEI/interview pages still carry the id)
+ *
+ * Glassdoor + AmbitionBox = employee reviews.
+ * G2 / Capterra / Trustpilot = customer/product reviews.
  */
 export function expandCanonicalReviewUrls(
   external: ExternalResult[],
@@ -42,11 +50,19 @@ export function expandCanonicalReviewUrls(
   domain: string | null,
 ): string[] {
   const urls = new Set<string>();
-  const slug = companyName
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+  const slug = companySlug(companyName);
   const tokens = companyTokens(companyName, domain);
+  const nameSlug = companyName.replace(/\s+/g, "-");
+
+  // Always try slug-based employee + customer review pages.
+  if (slug.length >= 2) {
+    urls.add(`https://www.ambitionbox.com/reviews/${slug}-reviews`);
+    urls.add(`https://www.ambitionbox.com/overview/${slug}-overview`);
+    urls.add(`https://www.g2.com/products/${slug}/reviews`);
+    urls.add(`https://www.g2.com/sellers/${slug}`);
+  }
+
+  let glassdoorId: string | null = null;
 
   for (const item of external) {
     if (!isReviewHost(item.url)) continue;
@@ -56,16 +72,7 @@ export function expandCanonicalReviewUrls(
 
     if (host.includes("glassdoor.com")) {
       const idMatch = item.url.match(/E(\d{4,})/i);
-      if (idMatch) {
-        const id = idMatch[1];
-        const nameSlug = companyName.replace(/\s+/g, "-");
-        urls.add(`https://www.glassdoor.com/Reviews/${nameSlug}-Reviews-E${id}.htm`);
-        urls.add(
-          `https://www.glassdoor.com/Overview/Working-at-${nameSlug}-EI_IE${id}.htm`,
-        );
-      } else if (/\/Reviews\//i.test(item.url) && mentionsCompany(item.url, tokens)) {
-        urls.add(item.url.split("?")[0]!);
-      }
+      if (idMatch) glassdoorId = idMatch[1]!;
     }
 
     if (host.includes("ambitionbox.com")) {
@@ -75,9 +82,6 @@ export function expandCanonicalReviewUrls(
       const overview = item.url.match(/\/overview\/([a-z0-9-]+)-overview/i);
       if (overview && mentionsCompany(overview[1]!, tokens)) {
         urls.add(`https://www.ambitionbox.com/reviews/${overview[1]}-reviews`);
-      }
-      if (slug) {
-        urls.add(`https://www.ambitionbox.com/reviews/${slug}-reviews`);
       }
     }
 
@@ -90,23 +94,25 @@ export function expandCanonicalReviewUrls(
     if (
       host.includes("capterra.com") &&
       /\/reviews/i.test(item.url) &&
-      mentionsCompany(item.url + (item.title ?? ""), tokens)
+      mentionsCompany(`${item.url} ${item.title ?? ""}`, tokens)
     ) {
       urls.add(item.url.split("?")[0]!);
     }
   }
 
-  if (slug.length >= 3) {
-    urls.add(`https://www.ambitionbox.com/reviews/${slug}-reviews`);
-    urls.add(`https://www.g2.com/products/${slug}/reviews`);
+  if (glassdoorId) {
+    urls.add(`https://www.glassdoor.com/Reviews/${nameSlug}-Reviews-E${glassdoorId}.htm`);
+    urls.add(
+      `https://www.glassdoor.com/Overview/Working-at-${nameSlug}-EI_IE${glassdoorId}.htm`,
+    );
   }
 
   return Array.from(urls).slice(0, MAX_REVIEW_PAGES);
 }
 
 /**
- * Deep-scrapes review-site URLs (discovered + canonicalized) so agents get
- * full ratings/quotes instead of search snippets alone. Best-effort.
+ * Deep-scrapes employee + customer review pages so agents get ratings/quotes.
+ * Seeds AmbitionBox/G2 by slug and Glassdoor Reviews once a company id is known.
  */
 export async function enrichReviewSources(
   external: ExternalResult[],
@@ -130,9 +136,11 @@ export async function enrichReviewSources(
   const canonical = expandCanonicalReviewUrls(filtered, companyName, domain);
   const existingUrls = new Set(filtered.map((r) => r.url));
   const toScrape = [
+    ...canonical,
     ...filtered.filter((r) => isReviewHost(r.url)).map((r) => r.url),
-    ...canonical.filter((u) => !existingUrls.has(u)),
-  ].slice(0, MAX_REVIEW_PAGES);
+  ]
+    .filter((url, i, arr) => arr.indexOf(url) === i)
+    .slice(0, MAX_REVIEW_PAGES);
 
   if (toScrape.length === 0) return filtered;
 
@@ -150,7 +158,7 @@ export async function enrichReviewSources(
       if (!markdown || markdown.length < 120) return null;
       if (
         !mentionsCompany(
-          `${url} ${doc.metadata?.title ?? ""} ${markdown.slice(0, 400)}`,
+          `${url} ${doc.metadata?.title ?? ""} ${markdown.slice(0, 500)}`,
           tokens,
         )
       ) {

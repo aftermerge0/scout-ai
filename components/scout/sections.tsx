@@ -323,6 +323,15 @@ function ThemeList({
 }
 
 function ReviewCard({ review }: { review: ReviewSourceSummary }) {
+  const kind =
+    review.source === "glassdoor" || review.source === "ambitionbox"
+      ? "Employee"
+      : review.source === "g2" ||
+          review.source === "capterra" ||
+          review.source === "trustpilot"
+        ? "Customer"
+        : null
+
   return (
     <article className="space-y-3 rounded-md border border-border/80 bg-muted/15 px-3 py-3">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -338,6 +347,11 @@ function ReviewCard({ review }: { review: ReviewSourceSummary }) {
         ) : (
           <span className="text-sm font-medium">{review.sourceLabel}</span>
         )}
+        {kind ? (
+          <span className="font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+            {kind}
+          </span>
+        ) : null}
         {review.rating ? (
           <span className="font-mono text-sm tabular-nums">{review.rating}</span>
         ) : null}
@@ -386,6 +400,24 @@ function ReviewCard({ review }: { review: ReviewSourceSummary }) {
 }
 
 function CommunitySentiment({ data }: { data: CommunitySentimentData }) {
+  const employeeReviews = data.reviews.filter(
+    (r) => r.source === "glassdoor" || r.source === "ambitionbox"
+  )
+  const customerReviews = data.reviews.filter(
+    (r) =>
+      r.source === "g2" ||
+      r.source === "capterra" ||
+      r.source === "trustpilot"
+  )
+  const otherReviews = data.reviews.filter(
+    (r) =>
+      r.source !== "glassdoor" &&
+      r.source !== "ambitionbox" &&
+      r.source !== "g2" &&
+      r.source !== "capterra" &&
+      r.source !== "trustpilot"
+  )
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
@@ -397,11 +429,11 @@ function CommunitySentiment({ data }: { data: CommunitySentimentData }) {
         ) : null}
       </div>
 
-      {data.reviews.length > 0 ? (
+      {employeeReviews.length > 0 ? (
         <div className="space-y-3">
-          <Label>Review sites</Label>
+          <Label>Employee reviews</Label>
           <div className="grid gap-3">
-            {data.reviews.map((review) => (
+            {employeeReviews.map((review) => (
               <ReviewCard
                 key={`${review.source}-${review.sourceLabel}`}
                 review={review}
@@ -409,12 +441,42 @@ function CommunitySentiment({ data }: { data: CommunitySentimentData }) {
             ))}
           </div>
         </div>
-      ) : (
+      ) : null}
+
+      {customerReviews.length > 0 ? (
+        <div className="space-y-3">
+          <Label>Customer reviews</Label>
+          <div className="grid gap-3">
+            {customerReviews.map((review) => (
+              <ReviewCard
+                key={`${review.source}-${review.sourceLabel}`}
+                review={review}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {otherReviews.length > 0 ? (
+        <div className="space-y-3">
+          <Label>Other review sources</Label>
+          <div className="grid gap-3">
+            {otherReviews.map((review) => (
+              <ReviewCard
+                key={`${review.source}-${review.sourceLabel}`}
+                review={review}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {data.reviews.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No Glassdoor / AmbitionBox / G2 review pages were collected for this
-          run.
+          No employee (Glassdoor / AmbitionBox) or customer (G2 / Capterra)
+          review pages were collected for this run.
         </p>
-      )}
+      ) : null}
 
       {(data.positiveThemes.length > 0 || data.negativeThemes.length > 0) && (
         <div className="grid gap-6 sm:grid-cols-2">

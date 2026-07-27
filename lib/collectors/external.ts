@@ -32,20 +32,23 @@ function buildSearches(companyName: string, domain: string | null): SearchSpec[]
       includeDomains: ["crunchbase.com", "en.wikipedia.org"],
       numResults: 5,
     },
-    // Review sites — domain-scoped to avoid Verto/Vertiv-style collisions
+    // Employee reviews (Glassdoor / AmbitionBox) — domain-scoped; Glassdoor
+    // often indexes salary/DEI pages first; we extract the company id and
+    // Firecrawl-scrape the Reviews URL in enrichReviewSources.
     {
-      query: `${quoted} employee reviews rating`,
-      includeDomains: ["glassdoor.com/Reviews", "glassdoor.com/Overview"],
-      numResults: 5,
+      query: `${quoted} Glassdoor`,
+      includeDomains: ["glassdoor.com"],
+      numResults: 6,
     },
     {
-      query: `${quoted} reviews rating`,
-      includeDomains: ["ambitionbox.com/reviews", "ambitionbox.com/overview"],
+      query: `${quoted} reviews rating employees`,
+      includeDomains: ["ambitionbox.com"],
       numResults: 5,
     },
+    // Customer / product reviews
     {
       query: `${quoted} reviews`,
-      includeDomains: ["g2.com/products", "g2.com/sellers"],
+      includeDomains: ["g2.com"],
       numResults: 5,
     },
     {
