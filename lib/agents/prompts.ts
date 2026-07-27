@@ -17,7 +17,7 @@ Approach (follow in order):
 Hard constraints (MUST):
 - Base every factual claim ONLY on the provided evidence
 - Every item in "claims" must cite at least one real evidenceId or be omitted
-- Return confidence as an integer 0-100 reflecting how well-supported your answer is by the evidence (not how good the vendor is)
+- Return confidence as an integer 0-100 reflecting how well-supported your answer is by the evidence (not how good the vendor is). Never use 0-1 fractions.
 - Respect schema enums exactly; do not invent values outside allowed options
 
 Soft guidelines (SHOULD):
@@ -28,15 +28,15 @@ Soft guidelines (SHOULD):
 
 export const SECTION_GUIDANCE: Record<SectionKey, string> = {
   executive_summary:
-    "Objective: Give a scannable adoption verdict a busy buyer can act on in 30 seconds. overallScore is 0-10 (10 = excellent fit). verdict must align with overallScore and evidence. headline: one crisp sentence stating the bottom line. highlights: 3-5 bullets with the strongest evidence-backed takeaways. bestSuitedFor/avoidIf: concrete buyer profiles tied to evidence, not generic advice. Omit claims you cannot support.",
+    "Objective: Give a scannable adoption verdict a busy buyer can act on in 30 seconds. overallScore is 0-10 (10 = excellent fit). verdict must align with overallScore and evidence. headline: one crisp sentence stating the bottom line — plain language only, NO evidenceIds, URLs, or citation markup in the headline. highlights: 3-5 bullets with the strongest evidence-backed takeaways (also plain language). bestSuitedFor/avoidIf: concrete buyer profiles tied to evidence, not generic advice. Omit claims you cannot support.",
   company_overview:
-    "Objective: Extract verifiable company facts only. Fields: founded, hq, employees, funding, investors, estimatedArr, customers, regions, recentGrowth, founders. founders: name every founder/co-founder/CEO explicitly named in evidence with role and a one-line background when available — this is a priority field, dig for it in About pages, LinkedIn, Wikipedia, Crunchbase, and press. Prefer ranges or qualifiers (e.g. '200-500', '~$50M ARR (claimed)') when evidence is approximate. Use null/[] only when truly unsupported. Do not invent headcount or funding.",
+    "Objective: Extract verifiable company facts only. Fields: founded, hq, employees, funding, investors, estimatedArr, customers, regions, recentGrowth, founders. founders: name every founder/co-founder/CEO explicitly named in evidence with role and a one-line background when available — this is a priority field, dig for it in About pages, LinkedIn, Wikipedia, Crunchbase, and press. investors: prefer institutional / lead investors (max ~8); skip long angel lists. customers: max ~8 notable logos. Prefer ranges or qualifiers (e.g. '200-500', '~$50M ARR (claimed)') when evidence is approximate. Use null/[] only when truly unsupported. Do not invent headcount or funding.",
   product_overview:
     "Objective: Describe what the company actually sells and who it serves, grounded in their own docs and positioning. whatTheySell: one clear paragraph. primaryCustomers/useCases: specific segments and workflows, not 'enterprises of all sizes'. differentiators: only claims you can contrast with evidence. coreProducts: name + one-line description per product line found in evidence. Keep lists short (3-6 items) — clarity over completeness.",
   feature_analysis:
     "Objective: Assess the 6-8 most buyer-relevant features for this category (e.g. API, SSO, RBAC, SCIM, webhooks, audit logs). Skip speculative features with no evidence. For each: present (yes/no/limited/unknown), quality rating, brief notes. Prefer fewer well-supported rows over long unknown-filled tables.",
   community_sentiment:
-    "Objective: Synthesize employee and customer reviews plus community discussion. Priority: fill `reviews` from Glassdoor, AmbitionBox, G2, Capterra, LinkedIn, Trustpilot when those sources appear in evidence — include source, rating, reviewCount, short summary, top pros/cons, 1-3 sampleQuotes, and url. overall + trend from recurring themes. positiveThemes/negativeThemes: 2-4 themes each with concrete examples. Separate product issues from support/billing/culture. If review sites are missing, leave reviews=[] and say so via trend=unknown.",
+    "Objective: Synthesize employee and customer reviews plus community discussion. Priority: fill `reviews` from Glassdoor, AmbitionBox, G2, Capterra, LinkedIn, Trustpilot when those sources appear in evidence — one entry per distinct review site with source, rating, reviewCount, short summary, top 2-4 pros/cons, up to 3 sampleQuotes, and url. Theme names must be short noun phrases (e.g. 'Pricing at scale', 'Deploy DX') — never full sentences. examples: 1-2 concrete snippets. overall + trend from recurring themes. Separate product issues from support/billing/culture. Include every on-topic review site found; if a site only has thin evidence still add it with what you have. If review sites are missing, leave reviews=[] and set trend=unknown.",
   security_compliance:
     "Objective: Assess enterprise security readiness from evidence only. Check certifications (SOC2, ISO27001, HIPAA, GDPR, etc.) with status available/claimed/not_found/unknown. Check controls (SSO, SCIM, RBAC, encryption, audit logs) with supported/limited/not_found/unknown. enterpriseReadiness (0-100) reflects evidence of controls and certifications, not assumptions. List concerns and any documented incidents with citations.",
   pricing_intelligence:

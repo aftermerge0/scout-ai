@@ -66,7 +66,11 @@ export async function runEvaluationPipeline({
       collectExternalSources(resolved.companyName, resolved.domain),
     ])
     await repo.setPhase(evaluationId, "collecting_external")
-    const externalResults = await enrichReviewSources(externalRaw)
+    const externalResults = await enrichReviewSources(
+      externalRaw,
+      resolved.companyName,
+      resolved.domain
+    )
 
     if (officialPages.length > 0) {
       await repo.addEvidence(

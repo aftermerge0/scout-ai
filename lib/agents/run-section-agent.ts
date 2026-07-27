@@ -15,8 +15,8 @@ export type AgentEvidence = {
   markdown: string | null;
 };
 
-const MAX_MARKDOWN_CHARS_PER_ITEM = 1800;
-const MAX_EVIDENCE_ITEMS = 30;
+const MAX_MARKDOWN_CHARS_PER_ITEM = 2200;
+const MAX_EVIDENCE_ITEMS = 36;
 
 function buildEvidenceBlock(evidence: AgentEvidence[]): string {
   return evidence
@@ -26,6 +26,28 @@ function buildEvidenceBlock(evidence: AgentEvidence[]): string {
       return `--- evidenceId: ${e.id} | source: ${e.sourceType} | url: ${e.url}\n${e.title ? `title: ${e.title}\n` : ""}${body}`;
     })
     .join("\n\n");
+}
+
+/** Models sometimes emit 0-1 fractions; contract requires 0-100 integers. */
+function normalizeConfidence(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  const scaled = value > 0 && value <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, Math.round(scaled)));
+}
+
+function normalizeClaimConfidences<T>(data: T): T {
+  if (!data || typeof data !== "object") return data;
+  const record = data as Record<string, unknown>;
+  if (!Array.isArray(record.claims)) return data;
+  return {
+    ...record,
+    claims: record.claims.map((claim) => {
+      if (!claim || typeof claim !== "object") return claim;
+      const c = claim as Record<string, unknown>;
+      if (typeof c.confidence !== "number") return claim;
+      return { ...c, confidence: normalizeConfidence(c.confidence) };
+    }),
+  } as T;
 }
 
 export type SectionAgentResult<K extends SectionKey = SectionKey> = {
@@ -83,5 +105,8 @@ export async function runSectionAgent<K extends SectionKey>(params: {
     prompt,
   });
 
-  return { data: object.data as SectionDataByKey[K], confidence: object.confidence };
+  return {
+    data: normalizeClaimConfidences(object.data) as SectionDataByKey[K],
+    confidence: normalizeConfidence(object.confidence),
+  };
 }

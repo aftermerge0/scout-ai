@@ -192,8 +192,18 @@ function CompanyOverview({ data }: { data: CompanyOverviewData }) {
           <Fact label="Employees" value={data.employees} />
           <Fact label="Funding" value={data.funding} />
           <Fact label="Estimated ARR" value={data.estimatedArr} />
-          <TagFact label="Investors" items={data.investors} />
-          <TagFact label="Customers" items={data.customers} />
+          <TagFact label="Investors" items={data.investors.slice(0, 8)} />
+          {data.investors.length > 8 ? (
+            <p className="pb-2 font-mono text-[11px] text-muted-foreground">
+              +{data.investors.length - 8} more named in sources
+            </p>
+          ) : null}
+          <TagFact label="Customers" items={data.customers.slice(0, 8)} />
+          {data.customers.length > 8 ? (
+            <p className="pb-2 font-mono text-[11px] text-muted-foreground">
+              +{data.customers.length - 8} more named in sources
+            </p>
+          ) : null}
           <TagFact label="Regions" items={data.regions} />
           {data.recentGrowth ? (
             <Field label="Recent growth">
