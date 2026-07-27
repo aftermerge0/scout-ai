@@ -1,5 +1,6 @@
 "use client"
 
+import { asArray } from "@/lib/utils"
 import { SECTION_TITLES, type Finding } from "@/types/scout-api"
 
 import { EvidenceChips } from "./evidence"
@@ -8,10 +9,11 @@ import { Confidence, Label, Pill } from "./primitives"
 const SEVERITY_ORDER = { high: 0, medium: 1, low: 2 } as const
 
 /** Cross-section findings feed, most severe first. */
-export function Findings({ findings }: { findings: Finding[] }) {
-  if (findings.length === 0) return null
+export function Findings({ findings }: { findings: Finding[] | null | undefined }) {
+  const list = asArray(findings)
+  if (list.length === 0) return null
 
-  const sorted = [...findings].sort(
+  const sorted = [...list].sort(
     (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
   )
 
@@ -20,7 +22,7 @@ export function Findings({ findings }: { findings: Finding[] }) {
       <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <Label>Findings</Label>
         <span className="font-mono text-xs text-muted-foreground tabular-nums">
-          {findings.length}
+          {list.length}
         </span>
       </div>
       <ul className="divide-y divide-dashed divide-border">

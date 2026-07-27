@@ -14,6 +14,7 @@ import {
   type SummaryDto,
 } from "@/lib/api-types";
 import type { EvaluationRow } from "@/lib/evaluations/repository";
+import { asArray } from "@/lib/utils";
 
 /**
  * Maps a live (Prisma) evaluation row + relations onto the exact
@@ -124,9 +125,21 @@ export function toEvaluationDtoFromDb(
   const evidence =
     opts.includeEvidence === "none" ? [] : opts.includeEvidence === "summary" ? allEvidence.slice(0, 40) : allEvidence;
 
-  const summary: SummaryDto = row.summaryJson
-    ? (row.summaryJson as unknown as SummaryDto)
-    : { overallScore: null, verdict: null, confidence: null, headline: null, bestSuitedFor: [], avoidIf: [] };
+  const rawSummary = row.summaryJson as unknown as SummaryDto | null
+  const summary: SummaryDto = rawSummary
+    ? {
+        ...rawSummary,
+        bestSuitedFor: asArray(rawSummary.bestSuitedFor),
+        avoidIf: asArray(rawSummary.avoidIf),
+      }
+    : {
+        overallScore: null,
+        verdict: null,
+        confidence: null,
+        headline: null,
+        bestSuitedFor: [],
+        avoidIf: [],
+      };
 
   const shouldPoll = status === "queued" || status === "running";
 
@@ -145,7 +158,7 @@ export function toEvaluationDtoFromDb(
     progress: { percent, phase, phases, sectionsCompleted, sectionsTotal },
     summary,
     sections,
-    findings,
+    findings: asArray(findings),
     evidence,
     poll: { shouldPoll, pollAfterMs: shouldPoll ? 2000 : 0, etag },
   };

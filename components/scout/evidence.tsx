@@ -10,7 +10,7 @@ import {
   InlineCitationQuote,
 } from "@/components/ai-elements/inline-citation"
 import { HoverCardTrigger } from "@/components/ui/hover-card"
-import { cn } from "@/lib/utils"
+import { cn, asArray } from "@/lib/utils"
 import type { Claim, Evidence } from "@/types/scout-api"
 
 import { Confidence, Label } from "./primitives"
@@ -21,22 +21,25 @@ export function EvidenceProvider({
   evidence,
   children,
 }: {
-  evidence: Evidence[]
+  evidence: Evidence[] | null | undefined
   children: React.ReactNode
 }) {
+  const list = asArray(evidence)
   const map = useMemo(
-    () => new Map(evidence.map((item) => [item.id, item])),
-    [evidence]
+    () => new Map(list.map((item) => [item.id, item])),
+    [list]
   )
   return (
     <EvidenceContext.Provider value={map}>{children}</EvidenceContext.Provider>
   )
 }
 
-export function useEvidence(ids: string[]): Evidence[] {
+export function useEvidence(ids: string[] | null | undefined): Evidence[] {
   const map = useContext(EvidenceContext)
   // Contract §9.2: ids missing from the poll payload are dropped, never faked.
-  return ids.map((id) => map.get(id)).filter((item): item is Evidence => !!item)
+  return asArray(ids)
+    .map((id) => map.get(id))
+    .filter((item): item is Evidence => !!item)
 }
 
 /** Hover chip for one source. Colour encodes official vs third-party (§9.4). */
@@ -84,7 +87,7 @@ export function EvidenceChips({
   ids,
   className,
 }: {
-  ids: string[]
+  ids: string[] | null | undefined
   className?: string
 }) {
   const evidence = useEvidence(ids)
@@ -99,12 +102,13 @@ export function EvidenceChips({
 }
 
 /** Provenance footer rendered under any section that ships claims. */
-export function Claims({ claims }: { claims: Claim[] }) {
-  if (claims.length === 0) return null
+export function Claims({ claims }: { claims: Claim[] | null | undefined }) {
+  const list = asArray(claims)
+  if (list.length === 0) return null
   return (
     <div className="mt-4 space-y-2 border-t border-dashed border-border pt-3">
       <Label>Provenance</Label>
-      {claims.map((claim) => (
+      {list.map((claim) => (
         <div key={claim.id} className="flex flex-wrap items-baseline gap-2">
           <span className="text-sm text-muted-foreground">{claim.text}</span>
           <Confidence value={claim.confidence} />

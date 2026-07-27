@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { CheckIcon, LoaderIcon } from "lucide-react"
 
-import { cn } from "@/lib/utils"
+import { cn, asArray } from "@/lib/utils"
 import type { Evaluation } from "@/types/scout-api"
 import { PHASE_TITLES, PHASE_ORDER } from "@/types/scout-api"
 
@@ -84,7 +84,7 @@ export function ProgressRail({ evaluation }: { evaluation: Evaluation }) {
       </div>
       <ol className="grid gap-2 sm:grid-cols-5">
         {PHASE_ORDER.map((key) => {
-          const phase = progress.phases.find((p) => p.key === key)
+          const phase = asArray(progress.phases).find((p) => p.key === key)
           const state = phase?.status ?? "pending"
           return (
             <li key={key} className="flex items-center gap-2">

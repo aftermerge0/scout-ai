@@ -15,6 +15,7 @@ import type {
   SecurityComplianceData,
 } from "@/types/scout-api"
 import type { AnySection } from "@/types/scout-api"
+import { asArray } from "@/lib/utils"
 
 import { Claims, EvidenceChips } from "./evidence"
 import {
@@ -76,21 +77,23 @@ function TwoUp({
   leftLabel,
   rightLabel,
 }: {
-  left: string[]
-  right: string[]
+  left: string[] | null | undefined
+  right: string[] | null | undefined
   leftLabel: string
   rightLabel: string
 }) {
-  if (left.length === 0 && right.length === 0) return null
+  const leftItems = asArray(left)
+  const rightItems = asArray(right)
+  if (leftItems.length === 0 && rightItems.length === 0) return null
   return (
     <div className="grid gap-6 sm:grid-cols-2">
       <div className="space-y-2">
         <Label>{leftLabel}</Label>
-        <Bullets items={left} marker="+" />
+        <Bullets items={leftItems} marker="+" />
       </div>
       <div className="space-y-2">
         <Label>{rightLabel}</Label>
-        <Bullets items={right} marker="−" />
+        <Bullets items={rightItems} marker="−" />
       </div>
     </div>
   )
@@ -112,23 +115,25 @@ function Fact({
   )
 }
 
-function TagFact({ label, items }: { label: string; items: string[] }) {
-  if (items.length === 0) return null
+function TagFact({ label, items }: { label: string; items: string[] | undefined }) {
+  const list = asArray(items)
+  if (list.length === 0) return null
   return (
     <Field label={label}>
-      <Tags items={items} />
+      <Tags items={list} />
     </Field>
   )
 }
 
 function ExecutiveSummary({ data }: { data: ExecutiveSummaryData }) {
+  const highlights = asArray(data.highlights)
   // Score + verdict already live in the sticky header; keep this scannable.
   return (
     <div className="space-y-5">
-      {data.highlights.length > 0 ? (
+      {highlights.length > 0 ? (
         <div className="space-y-2">
           <Label>Key takeaways</Label>
-          <Bullets items={data.highlights} />
+          <Bullets items={highlights} />
         </div>
       ) : (
         <p className="text-base leading-relaxed text-balance">{data.headline}</p>
@@ -139,24 +144,28 @@ function ExecutiveSummary({ data }: { data: ExecutiveSummaryData }) {
 }
 
 function CompanyOverview({ data }: { data: CompanyOverviewData }) {
+  const founders = asArray(data.founders)
+  const investors = asArray(data.investors)
+  const customers = asArray(data.customers)
+  const regions = asArray(data.regions)
   const hasFacts =
     data.founded ||
     data.hq ||
     data.employees ||
     data.funding ||
     data.estimatedArr ||
-    data.investors.length > 0 ||
-    data.customers.length > 0 ||
-    data.regions.length > 0 ||
+    investors.length > 0 ||
+    customers.length > 0 ||
+    regions.length > 0 ||
     data.recentGrowth
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
         <Label>Founders</Label>
-        {data.founders.length > 0 ? (
+        {founders.length > 0 ? (
           <ul className="grid gap-3 sm:grid-cols-2">
-            {data.founders.map((founder) => (
+            {founders.map((founder) => (
               <li
                 key={founder.name}
                 className="space-y-1 rounded-md border border-border/80 bg-muted/20 px-3 py-3"
@@ -192,19 +201,19 @@ function CompanyOverview({ data }: { data: CompanyOverviewData }) {
           <Fact label="Employees" value={data.employees} />
           <Fact label="Funding" value={data.funding} />
           <Fact label="Estimated ARR" value={data.estimatedArr} />
-          <TagFact label="Investors" items={data.investors.slice(0, 8)} />
-          {data.investors.length > 8 ? (
+          <TagFact label="Investors" items={investors.slice(0, 8)} />
+          {investors.length > 8 ? (
             <p className="pb-2 font-mono text-[11px] text-muted-foreground">
-              +{data.investors.length - 8} more named in sources
+              +{investors.length - 8} more named in sources
             </p>
           ) : null}
-          <TagFact label="Customers" items={data.customers.slice(0, 8)} />
-          {data.customers.length > 8 ? (
+          <TagFact label="Customers" items={customers.slice(0, 8)} />
+          {customers.length > 8 ? (
             <p className="pb-2 font-mono text-[11px] text-muted-foreground">
-              +{data.customers.length - 8} more named in sources
+              +{customers.length - 8} more named in sources
             </p>
           ) : null}
-          <TagFact label="Regions" items={data.regions} />
+          <TagFact label="Regions" items={regions} />
           {data.recentGrowth ? (
             <Field label="Recent growth">
               <span className="text-sm">{data.recentGrowth}</span>
@@ -219,6 +228,7 @@ function CompanyOverview({ data }: { data: CompanyOverviewData }) {
 }
 
 function ProductOverview({ data }: { data: ProductOverviewData }) {
+  const coreProducts = asArray(data.coreProducts)
   return (
     <div className="space-y-5">
       <p className="text-sm leading-relaxed">{data.whatTheySell}</p>
@@ -227,11 +237,11 @@ function ProductOverview({ data }: { data: ProductOverviewData }) {
         <TagFact label="Use cases" items={data.useCases} />
         <TagFact label="Differentiators" items={data.differentiators} />
       </div>
-      {data.coreProducts.length > 0 ? (
+      {coreProducts.length > 0 ? (
         <div className="space-y-2">
           <Label>Core products</Label>
           <ul className="space-y-2">
-            {data.coreProducts.map((product) => (
+            {coreProducts.map((product) => (
               <li key={product.name} className="text-sm">
                 <span className="font-medium">{product.name}</span>
                 <span className="text-muted-foreground">
@@ -249,11 +259,12 @@ function ProductOverview({ data }: { data: ProductOverviewData }) {
 }
 
 function FeatureAnalysis({ data }: { data: FeatureAnalysisData }) {
+  const allFeatures = asArray(data.features)
   // Prefer known signals; unknowns alone just clutter the table.
-  const features = data.features.filter(
+  const features = allFeatures.filter(
     (f) => !(f.present === "unknown" && f.quality === "unknown" && !f.notes)
   )
-  const rows = features.length > 0 ? features : data.features
+  const rows = features.length > 0 ? features : allFeatures
 
   if (rows.length === 0) {
     return <Empty>No feature signals found</Empty>
@@ -289,13 +300,14 @@ function ThemeList({
   themes,
   tone,
 }: {
-  themes: CommunitySentimentData["positiveThemes"]
+  themes: CommunitySentimentData["positiveThemes"] | null | undefined
   tone: "positive" | "negative"
 }) {
-  if (themes.length === 0) return <Empty />
+  const list = asArray(themes)
+  if (list.length === 0) return <Empty />
   return (
     <ul className="space-y-3">
-      {themes.map((theme) => (
+      {list.map((theme) => (
         <li key={theme.theme} className="space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span
@@ -311,9 +323,9 @@ function ThemeList({
             <span className="text-sm font-medium">{theme.theme}</span>
             <EvidenceChips ids={theme.evidenceIds} />
           </div>
-          {theme.examples.length > 0 ? (
+          {asArray(theme.examples).length > 0 ? (
             <p className="pl-5 text-sm text-muted-foreground">
-              {theme.examples.join(" · ")}
+              {asArray(theme.examples).join(" · ")}
             </p>
           ) : null}
         </li>
@@ -323,6 +335,9 @@ function ThemeList({
 }
 
 function ReviewCard({ review }: { review: ReviewSourceSummary }) {
+  const pros = asArray(review.pros)
+  const cons = asArray(review.cons)
+  const sampleQuotes = asArray(review.sampleQuotes)
   const kind =
     review.source === "glassdoor" || review.source === "ambitionbox"
       ? "Employee"
@@ -367,25 +382,25 @@ function ReviewCard({ review }: { review: ReviewSourceSummary }) {
           {review.summary}
         </p>
       ) : null}
-      {(review.pros.length > 0 || review.cons.length > 0) && (
+      {(pros.length > 0 || cons.length > 0) && (
         <div className="grid gap-3 sm:grid-cols-2">
-            {review.pros.filter(Boolean).length > 0 ? (
+            {pros.filter(Boolean).length > 0 ? (
               <div className="space-y-1">
                 <Label>Pros</Label>
-                <Bullets items={review.pros.filter(Boolean)} marker="+" />
+                <Bullets items={pros.filter(Boolean)} marker="+" />
               </div>
             ) : null}
-            {review.cons.filter(Boolean).length > 0 ? (
+            {cons.filter(Boolean).length > 0 ? (
               <div className="space-y-1">
                 <Label>Cons</Label>
-                <Bullets items={review.cons.filter(Boolean)} marker="−" />
+                <Bullets items={cons.filter(Boolean)} marker="−" />
               </div>
             ) : null}
         </div>
       )}
-      {review.sampleQuotes.length > 0 ? (
+      {sampleQuotes.length > 0 ? (
         <ul className="space-y-2">
-          {review.sampleQuotes.map((quote) => (
+          {sampleQuotes.map((quote) => (
             <li
               key={quote}
               className="border-l-2 border-border pl-3 text-sm text-muted-foreground italic"
@@ -400,16 +415,19 @@ function ReviewCard({ review }: { review: ReviewSourceSummary }) {
 }
 
 function CommunitySentiment({ data }: { data: CommunitySentimentData }) {
-  const employeeReviews = data.reviews.filter(
+  const reviews = asArray(data.reviews)
+  const positiveThemes = asArray(data.positiveThemes)
+  const negativeThemes = asArray(data.negativeThemes)
+  const employeeReviews = reviews.filter(
     (r) => r.source === "glassdoor" || r.source === "ambitionbox"
   )
-  const customerReviews = data.reviews.filter(
+  const customerReviews = reviews.filter(
     (r) =>
       r.source === "g2" ||
       r.source === "capterra" ||
       r.source === "trustpilot"
   )
-  const otherReviews = data.reviews.filter(
+  const otherReviews = reviews.filter(
     (r) =>
       r.source !== "glassdoor" &&
       r.source !== "ambitionbox" &&
@@ -471,22 +489,22 @@ function CommunitySentiment({ data }: { data: CommunitySentimentData }) {
         </div>
       ) : null}
 
-      {data.reviews.length === 0 ? (
+      {reviews.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No employee (Glassdoor / AmbitionBox) or customer (G2 / Capterra)
           review pages were collected for this run.
         </p>
       ) : null}
 
-      {(data.positiveThemes.length > 0 || data.negativeThemes.length > 0) && (
+      {(positiveThemes.length > 0 || negativeThemes.length > 0) && (
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>What people like</Label>
-            <ThemeList themes={data.positiveThemes} tone="positive" />
+            <ThemeList themes={positiveThemes} tone="positive" />
           </div>
           <div className="space-y-2">
             <Label>What people complain about</Label>
-            <ThemeList themes={data.negativeThemes} tone="negative" />
+            <ThemeList themes={negativeThemes} tone="negative" />
           </div>
         </div>
       )}
@@ -510,8 +528,12 @@ const CONTROL_TONE = {
 } as const
 
 function SecurityCompliance({ data }: { data: SecurityComplianceData }) {
-  const certs = data.certifications.filter((c) => c.status !== "unknown")
-  const controls = data.controls.filter((c) => c.status !== "unknown")
+  const certifications = asArray(data.certifications)
+  const controls = asArray(data.controls)
+  const concerns = asArray(data.concerns)
+  const incidents = asArray(data.incidents)
+  const certs = certifications.filter((c) => c.status !== "unknown")
+  const knownControls = controls.filter((c) => c.status !== "unknown")
 
   return (
     <div className="space-y-5">
@@ -549,11 +571,11 @@ function SecurityCompliance({ data }: { data: SecurityComplianceData }) {
         </div>
       ) : null}
 
-      {controls.length > 0 ? (
+      {knownControls.length > 0 ? (
         <div className="space-y-2">
           <Label>Controls</Label>
           <DataTable head={["Control", "Status", "Notes"]}>
-            {controls.map((control) => (
+            {knownControls.map((control) => (
               <Row key={control.name}>
                 <Cell className="font-mono text-xs">{control.name}</Cell>
                 <Cell>
@@ -573,18 +595,18 @@ function SecurityCompliance({ data }: { data: SecurityComplianceData }) {
         </div>
       ) : null}
 
-      {data.concerns.length > 0 ? (
+      {concerns.length > 0 ? (
         <div className="space-y-2">
           <Label>Concerns</Label>
-          <Bullets items={data.concerns} marker="!" />
+          <Bullets items={concerns} marker="!" />
         </div>
       ) : null}
 
-      {data.incidents.length > 0 ? (
+      {incidents.length > 0 ? (
         <div className="space-y-2">
           <Label>Incidents</Label>
           <ul className="space-y-2">
-            {data.incidents.map((incident) => (
+            {incidents.map((incident) => (
               <li key={incident.title} className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-medium">{incident.title}</span>
@@ -615,6 +637,9 @@ const RELATIVE_PRICE_TONE = {
 } as const
 
 function PricingIntelligence({ data }: { data: PricingIntelligenceData }) {
+  const plans = asArray(data.plans)
+  const hiddenCosts = asArray(data.hiddenCosts)
+  const competitorComparison = asArray(data.competitorComparison)
   return (
     <div className="space-y-5">
       <div>
@@ -623,11 +648,11 @@ function PricingIntelligence({ data }: { data: PricingIntelligenceData }) {
         <Fact label="Est. annual spend" value={data.estimatedAnnualSpend} />
       </div>
 
-      {data.plans.length > 0 ? (
+      {plans.length > 0 ? (
         <div className="space-y-2">
           <Label>Plans</Label>
           <DataTable head={["Plan", "Price", "Notes"]}>
-            {data.plans.map((plan) => (
+            {plans.map((plan) => (
               <Row key={plan.name}>
                 <Cell className="font-mono text-xs">{plan.name}</Cell>
                 <Cell className="font-mono text-xs whitespace-nowrap">
@@ -648,18 +673,18 @@ function PricingIntelligence({ data }: { data: PricingIntelligenceData }) {
         </div>
       ) : null}
 
-      {data.hiddenCosts.length > 0 ? (
+      {hiddenCosts.length > 0 ? (
         <div className="space-y-2">
           <Label>Watch-outs</Label>
-          <Bullets items={data.hiddenCosts} marker="!" />
+          <Bullets items={hiddenCosts} marker="!" />
         </div>
       ) : null}
 
-      {data.competitorComparison.length > 0 ? (
+      {competitorComparison.length > 0 ? (
         <div className="space-y-2">
           <Label>Versus alternatives</Label>
           <DataTable head={["Competitor", "Relative price", "Notes"]}>
-            {data.competitorComparison.map((row) => (
+            {competitorComparison.map((row) => (
               <Row key={row.competitor}>
                 <Cell className="font-mono text-xs">{row.competitor}</Cell>
                 <Cell>
@@ -682,19 +707,21 @@ function PricingIntelligence({ data }: { data: PricingIntelligenceData }) {
 }
 
 function CompetitorAnalysis({ data }: { data: CompetitorAnalysisData }) {
-  if (data.competitors.length === 0 && data.featureMatrix.length === 0) {
+  const competitors = asArray(data.competitors)
+  const featureMatrix = asArray(data.featureMatrix)
+  if (competitors.length === 0 && featureMatrix.length === 0) {
     return <Empty>No competitors identified from sources</Empty>
   }
 
   const columns =
-    data.featureMatrix.length > 0
-      ? Object.keys(data.featureMatrix[0].values)
+    featureMatrix.length > 0
+      ? Object.keys(featureMatrix[0]?.values ?? {})
       : []
 
   return (
     <div className="space-y-5">
       <div className="space-y-3">
-        {data.competitors.map((competitor) => (
+        {competitors.map((competitor) => (
           <div key={competitor.name} className="space-y-2 border-b border-dashed border-border pb-4 last:border-0 last:pb-0">
             <div className="flex flex-wrap items-baseline gap-2">
               <span className="text-sm font-medium">{competitor.name}</span>
@@ -724,7 +751,7 @@ function CompetitorAnalysis({ data }: { data: CompetitorAnalysisData }) {
         <div className="space-y-2">
           <Label>Feature matrix</Label>
           <DataTable head={["Feature", ...columns]}>
-            {data.featureMatrix.map((row) => (
+            {featureMatrix.map((row) => (
               <Row key={row.feature}>
                 <Cell className="font-mono text-xs">{row.feature}</Cell>
                 {columns.map((column) => (
@@ -744,6 +771,8 @@ function CompetitorAnalysis({ data }: { data: CompetitorAnalysisData }) {
 }
 
 function EngineeringHealth({ data }: { data: EngineeringHealthData }) {
+  const notes = asArray(data.notes)
+  const statusPage = data.statusPage ?? { present: false, url: null }
   return (
     <div className="space-y-4">
       <div>
@@ -757,37 +786,39 @@ function EngineeringHealth({ data }: { data: EngineeringHealthData }) {
           <Quality value={data.sdkMaturity} />
         </Field>
         <Fact label="Release cadence" value={data.releaseCadence} />
-        {data.statusPage.present && data.statusPage.url ? (
+        {statusPage.present && statusPage.url ? (
           <Field label="Status page">
             <a
               className="font-mono text-sm underline underline-offset-4"
-              href={data.statusPage.url}
+              href={statusPage.url}
               target="_blank"
               rel="noreferrer"
             >
-              {data.statusPage.url}
+              {statusPage.url}
             </a>
           </Field>
         ) : null}
         <Fact label="Open source" value={data.openSourceSignals} />
         <Fact label="Deprecation policy" value={data.deprecationPolicy} />
       </div>
-      {data.notes.length > 0 ? <Bullets items={data.notes} /> : null}
+      {notes.length > 0 ? <Bullets items={notes} /> : null}
       <Claims claims={data.claims} />
     </div>
   )
 }
 
 function RiskAssessment({ data }: { data: RiskAssessmentData }) {
-  const knownCategories = data.categories.filter((c) => c.level !== "unknown")
+  const topRisks = asArray(data.topRisks)
+  const categories = asArray(data.categories)
+  const knownCategories = categories.filter((c) => c.level !== "unknown")
 
   return (
     <div className="space-y-5">
-      {data.topRisks.length > 0 ? (
+      {topRisks.length > 0 ? (
         <div className="space-y-2">
           <Label>Top risks</Label>
           <ul className="space-y-3">
-            {data.topRisks.map((risk) => (
+            {topRisks.map((risk) => (
               <li key={risk.title} className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <RiskPill level={risk.severity} />
@@ -831,25 +862,29 @@ function RiskAssessment({ data }: { data: RiskAssessmentData }) {
 }
 
 function Recommendation({ data }: { data: RecommendationData }) {
+  const why = asArray(data.why)
+  const caveats = asArray(data.caveats)
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <VerdictPill verdict={data.adopt} className="text-sm" />
-        <span className="font-mono text-2xl tabular-nums">
-          {data.overallScore.toFixed(1)}
-          <span className="text-sm text-muted-foreground">/10</span>
-        </span>
+        {data.overallScore != null ? (
+          <span className="font-mono text-2xl tabular-nums">
+            {data.overallScore.toFixed(1)}
+            <span className="text-sm text-muted-foreground">/10</span>
+          </span>
+        ) : null}
       </div>
-      {data.why.length > 0 ? (
+      {why.length > 0 ? (
         <div className="space-y-2">
           <Label>Why</Label>
-          <Bullets items={data.why} marker="+" />
+          <Bullets items={why} marker="+" />
         </div>
       ) : null}
-      {data.caveats.length > 0 ? (
+      {caveats.length > 0 ? (
         <div className="space-y-2">
           <Label>Conditions</Label>
-          <Bullets items={data.caveats} marker="!" />
+          <Bullets items={caveats} marker="!" />
         </div>
       ) : null}
       <TwoUp

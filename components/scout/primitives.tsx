@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react"
 
-import { cn } from "@/lib/utils"
+import { cn, asArray } from "@/lib/utils"
 import type {
   PresenceLevel,
   QualityLevel,
@@ -61,11 +61,12 @@ export function Value({ children }: { children: ReactNode }) {
 }
 
 /** Comma-free tag row used for lists (investors, customers, regions…). */
-export function Tags({ items }: { items: string[] }) {
-  if (items.length === 0) return <Empty />
+export function Tags({ items }: { items: string[] | null | undefined }) {
+  const list = asArray(items)
+  if (list.length === 0) return <Empty />
   return (
     <div className="flex flex-wrap gap-1.5">
-      {items.map((item) => (
+      {list.map((item) => (
         <span
           key={item}
           className="rounded-sm border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-xs"
@@ -82,14 +83,15 @@ export function Bullets({
   marker = "-",
   className,
 }: {
-  items: string[]
+  items: string[] | null | undefined
   marker?: string
   className?: string
 }) {
-  if (items.length === 0) return <Empty />
+  const list = asArray(items)
+  if (list.length === 0) return <Empty />
   return (
     <ul className={cn("space-y-1.5", className)}>
-      {items.map((item) => (
+      {list.map((item) => (
         <li key={item} className="flex gap-2 text-sm leading-relaxed">
           <span aria-hidden className="mt-px font-mono text-muted-foreground">
             {marker}

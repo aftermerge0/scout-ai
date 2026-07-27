@@ -9,6 +9,7 @@ import {
   SourcesTrigger,
 } from "@/components/ai-elements/sources"
 import { Button } from "@/components/ui/button"
+import { asArray } from "@/lib/utils"
 import { useEvaluation } from "@/hooks/use-evaluation"
 import { SECTION_ORDER } from "@/types/scout-api"
 import type { AnySection, Evaluation } from "@/types/scout-api"
@@ -59,7 +60,7 @@ export function ReportView({ id }: { id: string }) {
   const failedSections = sections.filter((s) => s.status === "failed")
 
   return (
-    <EvidenceProvider evidence={evaluation.evidence}>
+    <EvidenceProvider evidence={asArray(evaluation.evidence)}>
       <ReportHeader evaluation={evaluation} />
       <Shell>
         <div className="space-y-6">
@@ -118,8 +119,9 @@ export function ReportView({ id }: { id: string }) {
 }
 
 /** Contract §2: sections must render in the documented order regardless of payload order. */
-function orderSections(sections: AnySection[]): AnySection[] {
-  const byKey = new Map(sections.map((section) => [section.key, section]))
+function orderSections(sections: AnySection[] | null | undefined): AnySection[] {
+  const list = asArray(sections)
+  const byKey = new Map(list.map((section) => [section.key, section]))
   return SECTION_ORDER.map((key) => byKey.get(key)).filter(
     (section): section is AnySection => !!section
   )
@@ -146,24 +148,21 @@ function Headline({ evaluation }: { evaluation: Evaluation }) {
 }
 
 function EvidenceDrawer({ evaluation }: { evaluation: Evaluation }) {
-  if (evaluation.evidence.length === 0) return null
-  const official = evaluation.evidence.filter(
-    (e) => e.sourceType === "official"
-  )
-  const external = evaluation.evidence.filter(
-    (e) => e.sourceType === "external"
-  )
+  const evidence = asArray(evaluation.evidence)
+  if (evidence.length === 0) return null
+  const official = evidence.filter((e) => e.sourceType === "official")
+  const external = evidence.filter((e) => e.sourceType === "external")
 
   return (
     <Sources className="mb-0">
-      <SourcesTrigger count={evaluation.evidence.length}>
+      <SourcesTrigger count={evidence.length}>
         <span className="font-mono text-[11px] tracking-[0.14em] text-muted-foreground uppercase hover:text-foreground">
           {official.length} official · {external.length} third-party sources
         </span>
       </SourcesTrigger>
       <SourcesContent className="w-full max-w-full">
         <div className="flex flex-wrap gap-1.5">
-          {evaluation.evidence.map((item) => (
+          {evidence.map((item) => (
             <EvidenceChip key={item.id} evidence={item} />
           ))}
         </div>
