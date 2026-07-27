@@ -41,16 +41,15 @@ const companyOverviewSchema = z.object({
   customers: z.array(z.string()),
   regions: z.array(z.string()),
   recentGrowth: z.string().nullable(),
-  founders: z
-    .array(
-      z.object({
-        name: z.string(),
-        role: z.string().nullable(),
-        background: z.string().nullable(),
-        evidenceIds: z.array(z.string()),
-      }),
-    )
-    .default([]),
+  // Required (not .default) — Azure structured outputs reject optional props.
+  founders: z.array(
+    z.object({
+      name: z.string(),
+      role: z.string().nullable(),
+      background: z.string().nullable(),
+      evidenceIds: z.array(z.string()),
+    }),
+  ),
   claims: z.array(claimSchema),
 }) satisfies z.ZodType<SectionDataByKey["company_overview"]>;
 
@@ -87,30 +86,29 @@ const communitySentimentSchema = z.object({
   trend: z.enum(["improving", "stable", "worsening", "unknown"]),
   positiveThemes: z.array(themeSchema),
   negativeThemes: z.array(themeSchema),
-  reviews: z
-    .array(
-      z.object({
-        source: z.enum([
-          "glassdoor",
-          "ambitionbox",
-          "g2",
-          "capterra",
-          "linkedin",
-          "trustpilot",
-          "other",
-        ]),
-        sourceLabel: z.string(),
-        rating: z.string().nullable(),
-        reviewCount: z.string().nullable(),
-        summary: z.string().nullable(),
-        pros: z.array(z.string()),
-        cons: z.array(z.string()),
-        sampleQuotes: z.array(z.string()),
-        url: z.string().nullable(),
-        evidenceIds: z.array(z.string()),
-      }),
-    )
-    .default([]),
+  // Required (not .default) — Azure structured outputs reject optional props.
+  reviews: z.array(
+    z.object({
+      source: z.enum([
+        "glassdoor",
+        "ambitionbox",
+        "g2",
+        "capterra",
+        "linkedin",
+        "trustpilot",
+        "other",
+      ]),
+      sourceLabel: z.string(),
+      rating: z.string().nullable(),
+      reviewCount: z.string().nullable(),
+      summary: z.string().nullable(),
+      pros: z.array(z.string()),
+      cons: z.array(z.string()),
+      sampleQuotes: z.array(z.string()),
+      url: z.string().nullable(),
+      evidenceIds: z.array(z.string()),
+    }),
+  ),
   claims: z.array(claimSchema),
 }) satisfies z.ZodType<SectionDataByKey["community_sentiment"]>;
 

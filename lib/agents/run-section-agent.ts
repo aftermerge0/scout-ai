@@ -5,6 +5,15 @@ import type { EvaluationContext, SectionData, SectionDataByKey, SectionKey } fro
 import { getAzureModel } from "@/lib/azure-openai";
 import { BASE_SYSTEM_PROMPT, buildSectionUserPrompt } from "@/lib/agents/prompts";
 import { SECTION_SCHEMAS } from "@/lib/agents/schemas";
+import {
+  evidenceCharBudget,
+  isCompetitorEvidence,
+  isEngineeringEvidence,
+  isLeadershipEvidence,
+  isPricingEvidence,
+  isSecurityEvidence,
+  truncateEvidenceText,
+} from "@/lib/collectors/evidence-text";
 
 export type AgentEvidence = {
   id: string;
@@ -15,14 +24,76 @@ export type AgentEvidence = {
   markdown: string | null;
 };
 
-const MAX_MARKDOWN_CHARS_PER_ITEM = 2200;
 const MAX_EVIDENCE_ITEMS = 36;
 
-function buildEvidenceBlock(evidence: AgentEvidence[]): string {
-  return evidence
+const REVIEW_PATH = /\/(reviews?|ratings?)(\/?|$|\?)/i;
+const REVIEW_DOMAIN = /(glassdoor|ambitionbox|g2|capterra|trustpilot)\./i;
+
+function isReviewEvidence(e: AgentEvidence): boolean {
+  if (REVIEW_DOMAIN.test(e.url)) return true;
+  return REVIEW_PATH.test(e.url);
+}
+
+function sortByRelevance(
+  evidence: AgentEvidence[],
+  score: (e: AgentEvidence) => number,
+): AgentEvidence[] {
+  return [...evidence].sort((a, b) => score(b) - score(a));
+}
+
+/** Surface the pages each section needs first — same failure mode as buried founders. */
+export function prioritizeEvidenceForSection(
+  evidence: AgentEvidence[],
+  sectionKey: SectionKey,
+): AgentEvidence[] {
+  switch (sectionKey) {
+    case "company_overview":
+      return sortByRelevance(evidence, (e) => {
+        let score = isLeadershipEvidence(e) ? 10 : 0;
+        if (e.sourceType === "official" && isLeadershipEvidence(e)) score += 3;
+        return score;
+      });
+    case "community_sentiment":
+      return sortByRelevance(evidence, (e) => (isReviewEvidence(e) ? 10 : 0));
+    case "pricing_intelligence":
+      return sortByRelevance(evidence, (e) => {
+        let score = isPricingEvidence(e) ? 10 : 0;
+        if (isCompetitorEvidence(e)) score += 3;
+        return score;
+      });
+    case "security_compliance":
+      return sortByRelevance(evidence, (e) => (isSecurityEvidence(e) ? 10 : 0));
+    case "competitor_analysis":
+      return sortByRelevance(evidence, (e) => (isCompetitorEvidence(e) ? 10 : 0));
+    case "engineering_health":
+      return sortByRelevance(evidence, (e) => (isEngineeringEvidence(e) ? 10 : 0));
+    case "feature_analysis":
+    case "product_overview":
+      return sortByRelevance(evidence, (e) => {
+        let score = 0;
+        if (isEngineeringEvidence(e)) score += 6;
+        if (isPricingEvidence(e)) score += 2;
+        if (e.sourceType === "official") score += 2;
+        return score;
+      });
+    case "executive_summary":
+    case "recommendation":
+    case "risk_assessment":
+      return evidence;
+    default: {
+      const _exhaustive: never = sectionKey;
+      return _exhaustive;
+    }
+  }
+}
+
+function buildEvidenceBlock(evidence: AgentEvidence[], sectionKey: SectionKey): string {
+  const ordered = prioritizeEvidenceForSection(evidence, sectionKey);
+  return ordered
     .slice(0, MAX_EVIDENCE_ITEMS)
     .map((e) => {
-      const body = (e.markdown ?? e.snippet ?? "").slice(0, MAX_MARKDOWN_CHARS_PER_ITEM);
+      const raw = e.markdown ?? e.snippet ?? "";
+      const body = truncateEvidenceText(raw, evidenceCharBudget(e));
       return `--- evidenceId: ${e.id} | source: ${e.sourceType} | url: ${e.url}\n${e.title ? `title: ${e.title}\n` : ""}${body}`;
     })
     .join("\n\n");
@@ -94,7 +165,7 @@ export async function runSectionAgent<K extends SectionKey>(params: {
     companyName,
     domain,
     context,
-    evidenceBlock: buildEvidenceBlock(evidence),
+    evidenceBlock: buildEvidenceBlock(evidence, key),
     priorSectionsBlock,
   });
 
