@@ -16,13 +16,12 @@ export type EvaluationRecord = {
  *
  * This intentionally has no external persistence: it exists to unblock
  * frontend development against the exact `/api/v1` contract shape before
- * Neon/Prisma + Inngest are wired in (Phase 1). Records only live for the
+ * durable Postgres + Inngest path is wired in. Records only live for the
  * lifetime of a single warm server process (fine for local dev; on
  * serverless this may not survive across cold starts/instances).
  *
- * Swap-out plan: replace this module's functions with Prisma-backed
- * equivalents; `EvaluationRecord` maps directly onto the planned
- * `Evaluation` + generated section/evidence data.
+ * Stub-mode only: live mode persists `Evaluation` rows plus generated
+ * section/evidence data through `lib/evaluations/repository.ts`.
  */
 
 type StoreGlobal = typeof globalThis & {

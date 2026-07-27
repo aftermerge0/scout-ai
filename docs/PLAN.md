@@ -14,7 +14,7 @@
 - **Runtime:** Everything on Vercel (no Railway/Fly/Temporal)
 - **LLM:** Azure OpenAI (all agents)
 - **Orchestration:** Inngest durable functions (2–5 min jobs)
-- **DB:** Neon Postgres + Prisma
+- **DB:** Neon Postgres + Drizzle
 - **API surface:** Versioned `/api/v1/*` — contract frozen for MVP
 - **Auth:** None for hackathon MVP
 - **Monorepo shape:** Single Next.js app; shared types in `lib/api-types.ts` (imported by routes + eventually FE)
@@ -40,7 +40,7 @@ flowchart LR
 
 | You own | Friend owns |
 | --- | --- |
-| Prisma schema, migrations | `/`, `/report/[id]` UI |
+| Drizzle schema, migrations | `/`, `/report/[id]` UI |
 | `POST/GET /api/v1/evaluations*` | Form UX, progress, section renderers |
 | Inngest `scout/evaluate.company` | Polling / ETag client |
 | Firecrawl + Exa clients | Design system / Tailwind polish |
@@ -109,71 +109,14 @@ Full spec: [`docs/API_CONTRACT.md`](./API_CONTRACT.md)
 
 ---
 
-## Data model (Prisma)
+## Data model (Drizzle)
 
-```prisma
-// Conceptual — exact schema in prisma/schema.prisma during bootstrap
+Exact table definitions live in `lib/db/schema.ts`:
 
-model Evaluation {
-  id             String   @id @default(uuid())
-  input          String
-  normalizedUrl  String?
-  companyName    String?
-  domain         String?
-  status         String   // queued|running|completed|failed|partial
-  phase          String
-  contextJson    Json?
-  summaryJson    Json?
-  errorJson      Json?
-  progressJson   Json?
-  overallScore   Float?
-  verdict        String?
-  confidence     Int?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  completedAt    DateTime?
-  evidence       Evidence[]
-  sections       ReportSection[]
-  findings       Finding[]
-}
-
-model Evidence {
-  id           String   @id @default(uuid())
-  evaluationId String
-  sourceType   String   // official|external
-  url          String
-  title        String?
-  domain       String?
-  snippet      String?
-  markdown     String?  // server-only; not returned on poll by default
-  fetchedAt    DateTime
-}
-
-model ReportSection {
-  id           String   @id @default(uuid())
-  evaluationId String
-  key          String   // SectionKey
-  title        String
-  status       String   // pending|running|completed|failed
-  confidence   Int?
-  dataJson     Json?
-  errorJson    Json?
-  updatedAt    DateTime @updatedAt
-  @@unique([evaluationId, key])
-}
-
-model Finding {
-  id           String   @id @default(uuid())
-  evaluationId String
-  category     String
-  severity     String
-  title        String
-  summary      String
-  confidence   Int
-  evidenceIds  String[]
-  sectionKey   String
-}
-```
+- `evaluations` — input/entity/status/phase, JSON context/summary/error/progress, score/verdict/confidence, timestamps.
+- `evidence` — source metadata plus server-only markdown, cascaded by `evaluationId`.
+- `report_sections` — one row per `SectionKey`, unique on `(evaluationId, key)`, with data/error JSON.
+- `findings` — risk findings with `evidenceIds` as a Postgres text array, cascaded by `evaluationId`.
 
 ---
 
@@ -209,13 +152,13 @@ scout-ai/
     api-types.ts                           # shared contract types (FE copies or imports)
     api-errors.ts                          # error envelope helpers
     env.ts                                 # centralized zod-validated env config
-    db.ts                                  # Prisma client (adapter-pg)
+    db/                                    # Drizzle schema + lazy pg Pool singleton
     firecrawl.ts / exa.ts / azure-openai.ts # lazy SDK client singletons
     evaluations/
       store.ts / progress.ts / generate-content.ts / to-dto.ts   # stub pipeline (Phase 0)
       domain.ts                            # pure entity resolution (used by both stub + live)
-      repository.ts                        # Prisma CRUD (live pipeline)
-      db-to-dto.ts                         # maps Prisma row -> contract DTO (live pipeline)
+      repository.ts                        # Drizzle CRUD (live pipeline)
+      db-to-dto.ts                         # maps Drizzle row -> contract DTO (live pipeline)
       rate-limit.ts                        # in-memory per-IP limiter
       validation.ts                        # zod request schemas
     collectors/
@@ -230,7 +173,7 @@ scout-ai/
   inngest/
     client.ts
     functions/evaluate-company.ts          # full durable pipeline
-  prisma/schema.prisma
+  drizzle.config.ts
   docs/
     API_CONTRACT.md
     PLAN.md
@@ -268,11 +211,11 @@ All read through `lib/env.ts` (zod-validated; see `.env.example` for the authori
   - `domain.ts` — entity resolution from raw input (URL / bare domain / company name); inputs containing `"fail"` simulate a pipeline failure for FE testing
   - `generate-content.ts` — deterministic, contract-shaped section/finding/evidence content per company
   - `progress.ts` — pure function mapping elapsed time → phase/percent/section statuses (no timers, so it's safe to recompute on any request)
-  - `store.ts` — in-memory record store (dev-safe global singleton; **not** durable across serverless cold starts — Phase 1 replaces this with Prisma)
+  - `store.ts` — in-memory record store (dev-safe global singleton; **not** durable across serverless cold starts)
   - `to-dto.ts` — maps a record → the exact `EvaluationDto` contract shape, including ETag + `poll`
 - `lib/api-types.ts` mirrors the contract 1:1; `lib/api-errors.ts` provides the `{ data }` / `{ error }` envelope helpers
 - Inngest client + `/api/inngest` route + `evaluate-company` function skeleton added (`inngest/`) — documents the Phase 1-3 steps but is **not yet wired** to the API
-- Prisma schema added (`prisma/schema.prisma`, Prisma ORM 7 style: `prisma-client` generator + `@prisma/adapter-pg`, config in `prisma.config.ts`) — schema is ready but not yet used by any route
+- Drizzle schema added in `lib/db/schema.ts`; Drizzle Kit reads `drizzle.config.ts`
 - Verified via `bun run typecheck`, `bun run lint`, and live curl testing of the full create → poll → complete flow, the 404 case, ETag/304, evidence filtering, and the simulated failure path
 
 **Known limitation (by design):** the in-memory store means evaluations don't persist across server restarts or multiple serverless instances. This is acceptable for local FE development and demo now; Phase 1 below removes this limitation without changing the API contract.
@@ -280,8 +223,8 @@ All read through `lib/env.ts` (zod-validated; see `.env.example` for the authori
 ### Phase 1 — Persistence + job dispatch — done
 
 - `lib/env.ts` — centralized, zod-validated env config for every var in `.env.example` (`SCOUT_API_MODE`, `DATABASE_URL`, Firecrawl/Exa/Azure/Inngest keys, rate-limit/dedupe knobs). All routes/collectors/agents read config through this module, never `process.env` directly. `isLiveMode()` / `assertConfiguredFor(capability)` / `allMissingLiveModeConfig()` gate live-mode features with clear errors instead of deep `undefined` failures.
-- `lib/evaluations/repository.ts` — Prisma-backed CRUD (create with all 11 pending sections, entity/phase/section/finding/evidence writers, `markCompleted` / `markPartial` / `markFailed`, `findRecentByDomain` for dedupe) used whenever `SCOUT_API_MODE=live`.
-- `lib/evaluations/db-to-dto.ts` — maps a live Prisma row + relations to the exact `EvaluationDto` contract shape (phase/percent derivation, ETag from `updatedAt`+status+section count), the live-mode counterpart of the stub's `to-dto.ts`.
+- `lib/evaluations/repository.ts` — Drizzle-backed CRUD (create with all 11 pending sections, entity/phase/section/finding/evidence writers, `markCompleted` / `markPartial` / `markFailed`, `findRecentByDomain` for dedupe) used whenever `SCOUT_API_MODE=live`.
+- `lib/evaluations/db-to-dto.ts` — maps a live Drizzle row + relations to the exact `EvaluationDto` contract shape (phase/percent derivation, ETag from `updatedAt`+status+section count), the live-mode counterpart of the stub's `to-dto.ts`.
 - `app/api/v1/evaluations/*` routes now branch on `isLiveMode()`: stub mode is untouched (same in-memory simulation as Phase 0); live mode creates a real `Evaluation` row, sends `scout/evaluation.requested` to Inngest (client uses `isDev` so local dev doesn't need `INNGEST_EVENT_KEY` — run `bunx inngest-cli dev -u http://localhost:3000/api/inngest`), and reads progress straight from Postgres.
 - Verified end-to-end against a real local Postgres + the Inngest Dev Server: create → entity resolution → graceful `PIPELINE_FAILED` (no Firecrawl/Exa keys configured) → correct `phases[]`/`error.phase` in the polled DTO. DB writes, phase transitions, and error propagation all confirmed working; only the external API calls themselves are untested against real Firecrawl/Exa/Azure accounts.
 
@@ -330,11 +273,11 @@ Frontend phases run in parallel from Phase 0 using mocks/stubs.
 ## Todos
 
 - [x] Freeze API contract + fixtures + FE handoff doc
-- [x] Bootstrap Next.js deps (Prisma/Neon + Inngest); add `lib/api-types.ts` from contract
+- [x] Bootstrap Next.js deps (Drizzle/Neon + Inngest); add `lib/api-types.ts` from contract
 - [x] Ship working `/api/v1/evaluations` (POST + GET) + `/evidence` + `/health` backed by a deterministic in-memory simulation
 - [x] ETag/304 support on `GET /api/v1/evaluations/[id]`
-- [x] Prisma schema + Inngest client/function skeleton (not wired yet)
-- [x] Wire real Prisma persistence + Inngest event dispatch (`lib/evaluations/repository.ts`, `lib/env.ts`; stub store untouched for `SCOUT_API_MODE=stub`)
+- [x] Drizzle schema + Inngest client/function skeleton
+- [x] Wire real Drizzle persistence + Inngest event dispatch (`lib/evaluations/repository.ts`, `lib/env.ts`; stub store untouched for `SCOUT_API_MODE=stub`)
 - [x] Firecrawl official + Exa external collectors (`lib/collectors/*`)
 - [x] Azure section agents + recommendation + findings (`lib/agents/*`, `inngest/functions/evaluate-company.ts`)
 - [x] 24h dedupe cache + per-IP rate limit on `POST` (`lib/evaluations/rate-limit.ts`)

@@ -668,7 +668,7 @@ const USE_MOCKS = process.env.NEXT_PUBLIC_USE_API_MOCKS === "true";
 
 | Surface | Owner |
 | --- | --- |
-| `/api/v1/*` routes, Prisma, Inngest, Firecrawl, Exa, Azure agents | **Backend (you)** |
+| `/api/v1/*` routes, Drizzle, Inngest, Firecrawl, Exa, Azure agents | **Backend (you)** |
 | Landing page, report UI, polling client, section components | **Frontend (friend)** |
 | `docs/API_CONTRACT.md` + shared types | Backend owns; FE PRs allowed for clarity |
 | Visual design / UX | Frontend |

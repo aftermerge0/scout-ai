@@ -16,7 +16,7 @@ const rawEnvSchema = z.object({
 
   // "stub" = deterministic in-memory simulation (lib/evaluations/*), no
   // external calls or DB required. "live" = real Firecrawl/Exa/Azure/Inngest
-  // pipeline backed by Postgres via Prisma.
+  // pipeline backed by Postgres via Drizzle.
   SCOUT_API_MODE: z.enum(["stub", "live"]).default("stub"),
 
   DATABASE_URL: z.string().min(1).optional(),
@@ -31,10 +31,10 @@ const rawEnvSchema = z.object({
   AZURE_OPENAI_DEPLOYMENT: z.string().min(1).optional(),
   AZURE_OPENAI_API_VERSION: z.string().min(1).optional(),
 
-  // Used by the pre-existing `lib/ai.ts` / `lib/db/index.ts` (frontend AI
-  // chat + Drizzle) — kept alongside the AZURE_OPENAI_* vars above (used by
-  // the backend evaluation pipeline, lib/azure-openai.ts) since both can
-  // point at the same Azure OpenAI resource but are read differently.
+  // Used by the `lib/ai.ts` frontend AI chat; kept alongside the
+  // AZURE_OPENAI_* vars above (used by the backend evaluation pipeline,
+  // lib/azure-openai.ts) since both can point at the same Azure OpenAI
+  // resource but are read differently.
   AZURE_RESOURCE_NAME: z.string().min(1).optional(),
   AZURE_API_KEY: z.string().min(1).optional(),
   AZURE_DEPLOYMENT_NAME: z.string().min(1).optional(),

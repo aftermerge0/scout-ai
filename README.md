@@ -50,7 +50,7 @@ Live mode needs `DATABASE_URL`, `FIRECRAWL_API_KEY`, `EXA_API_KEY`, and the thre
 | Variable                                                          | Needed for   | Purpose                                                                      |
 | ----------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------- |
 | `SCOUT_API_MODE`                                                  | always       | `stub` or `live`. Defaults to `stub`.                                        |
-| `DATABASE_URL`                                                    | live + build | Neon Postgres connection string. Also read by `prisma generate`.             |
+| `DATABASE_URL`                                                    | live + db    | Neon Postgres connection string. Also read by Drizzle Kit database commands. |
 | `FIRECRAWL_API_KEY`                                               | live         | Official-source crawling                                                     |
 | `EXA_API_KEY`                                                     | live         | Third-party signal search                                                    |
 | `AZURE_OPENAI_API_KEY`                                            | live         | Section agents                                                               |
@@ -118,22 +118,23 @@ Polling: use `poll.pollAfterMs` (default 2000ms), send `If-None-Match` once you 
 
 ```bash
 bun run dev            # dev server
-bun run build          # prisma generate && next build
+bun run build          # next build
 bun run typecheck      # tsc --noEmit
 bun run lint           # eslint
 bun run format         # prettier
 
-bun run db:generate    # prisma generate
-bun run db:push        # prisma db push
-bun run db:studio      # prisma studio
+bun run db:generate    # drizzle-kit generate
+bun run db:migrate     # drizzle-kit migrate
+bun run db:push        # drizzle-kit push
+bun run db:studio      # drizzle-kit studio
 
 bun run inngest        # local Inngest dev server
 ```
 
 ## Notes for contributors
 
-- **`lib/generated/` is gitignored.** `prisma generate` runs as part of `build`; CI needs `DATABASE_URL` present at build time because `prisma.config.ts` reads it.
-- **Two ORMs are installed.** Prisma is the live path (`lib/db.ts`, `lib/evaluations/repository.ts`, `prisma/schema.prisma`). A Drizzle setup (`lib/db/`, `drizzle.config.ts`, `db:drizzle:*` scripts) survives from an earlier spike and is unused. Delete it when someone has a spare minute.
+- **Drizzle is the database layer.** Tables live in `lib/db/schema.ts`; `lib/db/index.ts` exposes the lazy `getDb()` singleton used by live evaluation persistence.
+- **Drizzle migrations live in `drizzle/`.** Generate them intentionally with `bun run db:generate`; apply schema changes with `bun run db:push` or `bun run db:migrate`.
 - **`lib/evaluations/store.ts` is stub-mode only.** It is in-memory and does not survive cold starts, which is fine because live mode never touches it.
 - **Blank env vars count as unset.** `lib/env.ts` strips empty strings before validating, so placeholder lines in `.env` disable a capability rather than crashing the process.
 - **`components/ai-elements/` is pruned to what's imported.** Pulling a component back from the registry may reintroduce type errors against Base UI v1, and the build typechecks the whole repo.

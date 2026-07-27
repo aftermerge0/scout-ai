@@ -16,7 +16,7 @@ import {
 import type { EvaluationRow } from "@/lib/evaluations/repository";
 
 /**
- * Maps a live (Prisma) evaluation row + relations onto the exact
+ * Maps a live (Drizzle) evaluation row + relations onto the exact
  * `EvaluationDto` contract shape — the live-mode counterpart of
  * `lib/evaluations/to-dto.ts` (which serves the stub simulation).
  */
